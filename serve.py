@@ -75,10 +75,11 @@ def main():
     container_script = r'''set -eu
 command -v gh >/dev/null || { echo "❌ gh CLI is missing from the image." >&2; exit 1; }
 command -v git >/dev/null || { echo "❌ git CLI is missing from the image." >&2; exit 1; }
-printf '\n🔑 3/3  Checking GitHub authentication...\n\n'
+command -v altivec-sdk >/dev/null || { echo "❌ altivec-sdk is missing from the image." >&2; exit 1; }
+printf '\n🔑 3/4  Checking GitHub authentication...\n\n'
 printf '   gh auth status\n'
 gh auth status --hostname github.com
-printf '\\n👤 Authenticated GitHub user: '
+printf '\n👤 Authenticated GitHub user: '
 gh api user --jq .login
 gh auth setup-git --hostname github.com
 # Ask Git's configured credential helper for HTTPS credentials without ever
@@ -89,19 +90,40 @@ else
   echo "❌ Git could not obtain an HTTPS credential from gh." >&2
   exit 1
 fi
-printf '\n🎉 Authentication preflight passed.\n'
+printf '\n✅ GitHub authentication preflight passed.\n'
+printf '\n🧰 4/4  Checking Altivec SDK installations...\n\n'
+sdk_status=$(altivec-sdk status)
+printf '%s\n' "$sdk_status"
+sdks_installed() {
+  printf '%s\n' "$sdk_status" | grep -Eq '^MacOSX10\.5[[:space:]].*[[:space:]]installed[[:space:]]*$' &&
+  printf '%s\n' "$sdk_status" | grep -Eq '^MacOSX11\.3[[:space:]].*[[:space:]]installed[[:space:]]*$' &&
+  printf '%s\n' "$sdk_status" | grep -Eq '^iPhoneOS8\.4[[:space:]].*[[:space:]]installed[[:space:]]*$'
+}
+if ! sdks_installed; then
+  printf '\n📋 SDKs need installation; checking available archives...\n'
+  altivec-sdk preflight
+  printf '\n📥 Installing missing SDKs...\n'
+  altivec-sdk install
+  sdk_status=$(altivec-sdk status)
+  printf '%s\n' "$sdk_status"
+  sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
+fi
+printf '\n✅ All Altivec SDKs are installed.\n'
 printf '\n📂 Workspace: /repo/user\n\n'
 cd /repo/user
 exec bash -l
 '''
 
-    print(f"\n📦 3/3  Starting container with {engine_name}...\n", flush=True)
+    print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
     env = os.environ.copy()
     env["GH_TOKEN"] = token
     command = [
         engine, "run", "--rm", "-it",
         "-e", "GH_TOKEN",
+        "-v", f"{os.path.expanduser('~')}:/root",
         "-v", f"{checkout}:{WORKSPACE}",
+        "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
+        "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
         "-w", WORKSPACE,
         "--entrypoint", "bash",
         IMAGE,
