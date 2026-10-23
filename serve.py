@@ -14,7 +14,7 @@ WORKSPACE = "/repo/user"
 
 
 def fail(message):
-    print(f"Preflight failed: {message}", file=sys.stderr)
+    print(f"\n❌ Preflight failed: {message}\n", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -60,37 +60,42 @@ def select_engine():
 
 
 def main():
-    print("Preflight 1/3: retrieving GitHub token from 1Password...")
+    print("\n🚀 refAInery\n" + "─" * 40)
+    print("\n🔐 1/3  Getting GitHub token from 1Password...")
     token = get_github_token()
+    print("✅      Token retrieved (value hidden)")
 
-    print("Preflight 2/3: checking container runtime...")
+    print("\n🐳 2/3  Checking container runtime...")
     engine, engine_name = select_engine()
     checkout = os.path.dirname(os.path.abspath(__file__))
+    print(f"✅      {engine_name.capitalize()} is ready")
 
     # The static in-container script never includes the secret. `-e GH_TOKEN`
     # asks the runtime to take it from this subprocess's environment, not argv.
     container_script = r'''set -eu
-command -v gh >/dev/null || { echo "gh CLI is missing from the image." >&2; exit 1; }
-command -v git >/dev/null || { echo "git CLI is missing from the image." >&2; exit 1; }
-echo "Checking GitHub CLI authentication..."
+command -v gh >/dev/null || { echo "❌ gh CLI is missing from the image." >&2; exit 1; }
+command -v git >/dev/null || { echo "❌ git CLI is missing from the image." >&2; exit 1; }
+printf '\n🔑 3/3  Checking GitHub authentication...\n\n'
+printf '   gh auth status\n'
 gh auth status --hostname github.com
-echo "Authenticated GitHub user:"
+printf '\\n👤 Authenticated GitHub user: '
 gh api user --jq .login
 gh auth setup-git --hostname github.com
 # Ask Git's configured credential helper for HTTPS credentials without ever
 # printing the returned password/token.
 if printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | grep -q '^password=.'; then
-  echo "Git HTTPS credential helper returned a credential."
+  echo "✅ Git HTTPS credential is available."
 else
-  echo "Git could not obtain an HTTPS credential from gh." >&2
+  echo "❌ Git could not obtain an HTTPS credential from gh." >&2
   exit 1
 fi
-echo "GitHub authentication preflight passed."
+printf '\n🎉 Authentication preflight passed.\n'
+printf '\n📂 Workspace: /repo/user\n\n'
 cd /repo/user
 exec bash -l
 '''
 
-    print(f"Preflight 3/3: starting {engine_name}, checking gh and git auth...", flush=True)
+    print(f"\n📦 3/3  Starting container with {engine_name}...\n", flush=True)
     env = os.environ.copy()
     env["GH_TOKEN"] = token
     command = [
