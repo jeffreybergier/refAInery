@@ -10,7 +10,7 @@ import sys
 IMAGE = "ghcr.io/jeffreybergier/altivec-intelligence:latest"
 ITEM = "Dev Key - refAInery"
 FIELD = "GITHUB_TOKEN"
-WORKSPACE = "/source"
+WORKSPACE = "/app"
 
 
 def fail(message):
@@ -112,8 +112,8 @@ if ! sdks_installed; then
   sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
 fi
 printf '\n✅ All Altivec SDKs are installed.\n'
-printf '\n📂 Read-only source: /source\n\n'
-cd /source
+printf '\n📂 Read-only source: /app\n\n'
+cd /app
 exec bash -l
 '''
 
