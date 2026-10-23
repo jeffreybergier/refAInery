@@ -16,16 +16,22 @@ after(() => new Promise((resolve, reject) => {
   server.closeAllConnections();
 }));
 
-test("Hello World uses dark Bootstrap and clearly labels planned features", async () => {
+test("control room uses dark Bootstrap and orders operations, floor, and configuration", async () => {
   const response = await fetch(origin);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   const page = await response.text();
   assert.match(page, /data-bs-theme="dark"/);
-  assert.match(page, /Hello, world/);
-  assert.match(page, /Agent workflows not connected/);
-  assert.match(page, /No agents running/);
-  assert.equal((page.match(/class="preview-badge">Planned/g) ?? []).length, 3);
+  assert.match(page, /Factory Operations/);
+  assert.match(page, /Factory Floor/);
+  assert.match(page, /Factory Configuration/);
+  assert.match(page, /No agents or real work are running/);
+  assert.ok(page.indexOf('section id="operations"') < page.indexOf('section id="factory-floor"'));
+  assert.ok(page.indexOf('section id="factory-floor"') < page.indexOf('section id="configuration"'));
+  assert.doesNotMatch(page, /Hello, world|Bring an idea|Watch the work|Review the output/);
+  assert.match(page, /Tokens over time/);
+  assert.match(page, /Subagent outcomes/);
+  assert.match(page, /<details class="panel p-4">/);
   assert.match(page, /Skip to content/);
   assert.match(page, /aria-controls="navigation"/);
   assert.doesNotMatch(page, /(?:src|href)="https?:\/\//);

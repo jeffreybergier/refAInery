@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { loadPreview } from "./preview.ts";
+import { loadPreview, readPreviewTranscript } from "./preview.ts";
 import type { PreviewDirectories } from "./preview.ts";
 
 // Explicit routes keep source, configuration, and credentials out of the web root.
@@ -44,6 +44,28 @@ export function createAppServer(preview?: PreviewDirectories) {
         response.end(request.method === "HEAD" ? undefined : JSON.stringify({
           error: "Test fixtures unavailable or invalid. Check the test JSON files.",
         }));
+      }
+      return;
+    }
+    const transcript = /^\/preview\/transcripts\/([a-zA-Z0-9][a-zA-Z0-9_-]{0,79})\.html$/.exec(pathname);
+    if (preview && transcript) {
+      // Generated HTML is untrusted. Isolate its origin and prohibit all scripts,
+      // forms, external resources, frames, and popups, even in future Pi exports.
+      response.setHeader("Content-Security-Policy",
+        "sandbox; default-src 'none'; style-src 'unsafe-inline'; " +
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+      try {
+        const content = await readPreviewTranscript(preview, transcript[1]);
+        if (content) {
+          response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          response.end(request.method === "HEAD" ? undefined : content);
+        } else {
+          response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          response.end(request.method === "HEAD" ? undefined : "Transcript not found\n");
+        }
+      } catch {
+        response.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+        response.end(request.method === "HEAD" ? undefined : "Test transcript unavailable\n");
       }
       return;
     }

@@ -18,9 +18,13 @@ async function fixtures(t) {
     privateField: "never send this field",
   };
   const storage = {
-    fixtureVersion: 1, environment: "test",
+    fixtureVersion: 2, environment: "test",
+    operations: { state: "running", asOf: "2026-10-23T13:30:00Z",
+      tokenUsage: [{ at: "2026-10-23T13:20:00Z", input: 1000, output: 200 }] },
     runs: [{ id: "run-1", title: "Fictional run", summary: "Example", status: "running",
-      tasks: [{ id: "task-1", title: "Review", agentId: "reviewer", status: "queued" }] }],
+      tasks: [{ id: "task-1", title: "Review", agentId: "reviewer", status: "running",
+        kind: "subagent", stage: 0, startedAt: "2026-10-23T13:20:00Z",
+        endedAt: null, transcriptId: null }] }],
   };
   const save = async () => {
     await writeFile(join(directories.config, "config.json"), JSON.stringify(config));
@@ -74,6 +78,18 @@ test("unsupported schemas, production data, duplicate IDs, and bad references fa
     () => { fixture.config.agents.push(fixture.config.agents[0]); },
     () => { fixture.storage.runs[0].tasks[0].agentId = "missing"; },
     () => { fixture.storage.runs[0].status = "unknown"; },
+    () => { fixture.storage.fixtureVersion = 1; },
+    () => { fixture.storage.operations.state = "stopped"; },
+    () => { fixture.storage.operations.tokenUsage[0].input = -1; },
+    () => { fixture.storage.operations.tokenUsage[0].output = 1.5; },
+    () => { fixture.storage.operations.tokenUsage.push(fixture.storage.operations.tokenUsage[0]); },
+    () => { fixture.storage.operations.tokenUsage[0].at = "2026-10-23T14:30:00Z"; },
+    () => { fixture.storage.operations.asOf = "2026-02-30T13:30:00Z"; },
+    () => { fixture.storage.runs[0].tasks[0].startedAt = "2026-10-23T14:30:00Z"; },
+    () => { fixture.storage.runs[0].tasks[0].stage = -1; },
+    () => { fixture.storage.runs[0].tasks[0].kind = "unknown"; },
+    () => { fixture.storage.runs[0].tasks[0].transcriptId = "../secret"; },
+    () => { fixture.storage.runs[0].tasks[0].transcriptId = "running-report"; },
   ]) {
     const config = structuredClone(fixture.config);
     const storage = structuredClone(fixture.storage);
@@ -107,4 +123,88 @@ test("invalid live edits return a redacted error, never production fallback", as
   const error = await response.text();
   assert.doesNotMatch(error, /PRIVATE|production|refainery-preview-/);
   assert.match(error, /Test fixtures unavailable/);
+});
+
+test("metrics derive from tasks and exclude orchestrators from subagent success", async (t) => {
+  const fixture = await fixtures(t);
+  const base = fixture.storage.runs[0].tasks[0];
+  const task = (id, status, kind = "subagent") => ({
+    ...base, id, status, kind,
+    endedAt: ["completed", "failed", "awaiting-review"].includes(status) ? "2026-10-23T13:25:00Z" : null,
+    startedAt: ["queued", "cancelled"].includes(status) ? null : base.startedAt,
+  });
+  fixture.storage.runs[0].tasks.push(task("ok", "completed"), task("bad", "failed"),
+    task("orchestrator", "completed", "orchestrator"), task("queued", "queued"),
+    task("cancelled", "cancelled"), task("review", "awaiting-review"));
+  await fixture.save();
+  const preview = await loadPreview(fixture.directories);
+  assert.deepEqual(preview.operations.counts, { active: 1, queued: 1, completed: 2, failed: 1 });
+  assert.deepEqual(preview.operations.outcomes, { succeeded: 1, failed: 1, other: 4 });
+});
+
+test("empty idle and stopped factories have zero counts and no made-up samples", async (t) => {
+  const fixture = await fixtures(t);
+  fixture.storage.runs = [];
+  fixture.storage.operations.tokenUsage = [];
+  for (const state of ["idle", "stopped"]) {
+    fixture.storage.operations.state = state;
+    await fixture.save();
+    const preview = await loadPreview(fixture.directories);
+    assert.equal(preview.operations.state, state);
+    assert.deepEqual(preview.operations.counts, { active: 0, queued: 0, completed: 0, failed: 0 });
+    assert.deepEqual(preview.operations.outcomes, { succeeded: 0, failed: 0, other: 0 });
+    assert.deepEqual(preview.operations.tokenUsage, []);
+  }
+});
+
+async function addTranscript(fixture) {
+  const task = fixture.storage.runs[0].tasks[0];
+  task.status = "completed";
+  task.endedAt = "2026-10-23T13:25:00Z";
+  task.transcriptId = "sample";
+  fixture.storage.operations.state = "idle";
+  const folder = join(fixture.directories.storage, "transcripts");
+  await mkdir(folder);
+  await writeFile(join(folder, "sample.html"), '<!doctype html><h1>TEST FIXTURE</h1><script>window.bad = true</script>');
+  await fixture.save();
+  return folder;
+}
+
+test("referenced HTML transcripts have a script-free opaque-origin sandbox", async (t) => {
+  const fixture = await fixtures(t);
+  await addTranscript(fixture);
+  const origin = await listen(t, fixture.directories);
+  const preview = await loadPreview(fixture.directories);
+  const url = preview.runs[0].tasks[0].transcriptUrl;
+  assert.equal(url, "/preview/transcripts/sample.html");
+  const response = await fetch(origin + url);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/html/);
+  const csp = response.headers.get("content-security-policy");
+  assert.match(csp, /^sandbox;/);
+  assert.match(csp, /default-src 'none'/);
+  assert.doesNotMatch(csp, /allow-scripts|allow-same-origin/);
+  assert.match(await response.text(), /TEST FIXTURE/);
+  assert.equal(await (await fetch(origin + url, { method: "HEAD" })).text(), "");
+  assert.equal((await fetch(`${origin}/preview/transcripts/unknown.html`)).status, 404);
+  assert.equal((await fetch(`${origin}/preview/transcripts/sample.html`, { method: "POST" })).status, 405);
+  const production = await listen(t);
+  assert.equal((await fetch(production + url)).status, 404);
+});
+
+test("missing reports, unreferenced files, and symlink escapes are not served", async (t) => {
+  const fixture = await fixtures(t);
+  const folder = await addTranscript(fixture);
+  const origin = await listen(t, fixture.directories);
+  await writeFile(join(folder, "unreferenced.html"), "PRIVATE");
+  assert.equal((await fetch(`${origin}/preview/transcripts/unreferenced.html`)).status, 404);
+  await rm(join(folder, "sample.html"));
+  await assert.rejects(loadPreview(fixture.directories));
+  const outside = join(fixture.root, "private.html");
+  await writeFile(outside, "PRIVATE");
+  await symlink(outside, join(folder, "sample.html"));
+  await assert.rejects(loadPreview(fixture.directories));
+  const response = await fetch(`${origin}/preview/transcripts/sample.html`);
+  assert.equal(response.status, 503);
+  assert.doesNotMatch(await response.text(), /PRIVATE|private.html/);
 });

@@ -1,11 +1,29 @@
 # refAInery
 
-A personal AI workshop. The current implementation is a Hello World web UI:
-Bootstrap 5.3 dark mode, charcoal panels, furnace-orange accents, and a
-CSS-drawn refinery. The factory stages are explicitly marked as planned;
-no real agents, workflows, or run storage are connected to this page.
-A test-only fixture dashboard lets us design configuration and run displays
-before implementing Pi or orchestration.
+A personal AI workshop with a dark, industrial Bootstrap control room.
+The current dashboard uses fictional, read-only fixtures to design the system
+before Pi or real orchestration is connected.
+
+## Control room
+
+1. **Factory Operations** — simulated Running/Idle/Stopped state; active
+   execution, queued task, success, and failure counts; subagent outcome chart;
+   input/output token history with an accessible data table. Counts are derived
+   from tasks. Success rate uses completed/failed subagents only, excluding
+   orchestrators and pending/cancelled work. Token counts are per interval,
+   not cumulative. Times and elapsed durations use the frozen fixture snapshot.
+2. **Factory Floor** — one horizontal execution timeline per run. History is
+   ordered by start time, with in-flight groups at the right. Tasks sharing a
+   stage stack vertically to represent parallel execution. Timelines initially
+   scroll to current/latest work and have keyboard-accessible scrolling and
+   Earlier/Latest buttons. Unstarted tasks are listed separately, not drawn as
+   past executions. Finished tasks link to sample HTML transcripts when present.
+3. **Factory Configuration** — collapsed reference section at the bottom with
+   config-derived agent definitions. These are not active worker processes.
+
+Use **Refresh fixtures** to reload data without reloading the page. Invalid
+edits clear the old dashboard instead of leaving apparently healthy stale data.
+A non-test server shows honest empty states, never invented live statistics.
 
 ## Fast fake-data preview
 
@@ -19,7 +37,8 @@ Vibing/
     test/config.json # fictional agents and workshop settings
   refAInery-storage/
     prod/            # reserved real run records
-    test/workshop.json # fictional runs and tasks
+    test/workshop.json # fictional operations, runs, and tasks (fixture v2)
+    test/transcripts/  # static sample HTML; not Pi-generated
 ```
 
 ```sh
@@ -40,10 +59,18 @@ fixtures stop startup. Invalid edits after startup display a preview error.
 
 Edit either fixture JSON file and refresh the browser. Simulated running,
 awaiting-review, completed, and failed runs are frozen design examples, not
-live work. All displays are explicitly labeled TEST. The versioned fixture
-format is intentionally separate from future production schemas/checkpoints.
+live work. All displays are explicitly labeled TEST. Configuration remains
+fixture v1; storage uses fixture v2 for telemetry, execution timing, grouping,
+and transcript references. The fixture format is intentionally separate from
+future production schemas/checkpoints.
 See each sibling README for the fields and references. Do not put secrets or
 real private data in fixtures.
+
+Transcript links open separate tabs containing explicitly labeled sample HTML,
+not actual Pi exports. Only files referenced by validated fixture tasks can be
+served; symlink escapes and arbitrary paths are rejected. Responses use a
+script-free CSP sandbox with an opaque origin. No agent HTML is embedded into
+the control room. Real Pi export generation is not implemented.
 
 ## Container launch
 
@@ -85,7 +112,8 @@ npm test
 ```
 
 Tests cover HTTP routes, local assets, dark-theme markup, security headers,
-path isolation, fixture validation/isolation/reloading, and both offline
+path isolation, fixture validation/isolation/reloading, derived metrics,
+timeline ordering, chart edge cases, transcript isolation, and both offline
 launcher command constructions. Tests use temporary fixtures, so they do not
 require the sibling repositories. They do not access
 1Password, start containers, or validate SDK installation.
@@ -93,10 +121,10 @@ require the sibling repositories. They do not access
 ## Files
 
 - `source/public/index.html` — responsive Bootstrap page and mobile navigation.
-- `source/public/refainery.css` — industrial theme and decorative refinery.
+- `source/public/refainery.css` — industrial theme, charts, and timeline layout.
 - `source/server.ts` — explicit public asset routes; no general filesystem root.
 - `source/main.ts` — shared server entry point and explicit mode selection.
 - `source/preview.ts` — read-only, validated test fixture adapter.
-- `source/public/preview.js` — text-only fixture rendering.
+- `source/public/preview.js` — safe text/SVG rendering and dashboard interactions.
 - `tests/serve.py` — fast, credential-free test launcher.
 - `SPEC.md` — intended product architecture and future behavior.

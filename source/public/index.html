@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/assets/bootstrap.min.css">
     <link rel="stylesheet" href="/assets/refainery.css">
     <script src="/assets/bootstrap.bundle.min.js" defer></script>
-    <script src="/assets/preview.js" defer></script>
+    <script src="/assets/preview.js" type="module"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -26,93 +26,94 @@
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navigation">
-          <ul class="navbar-nav ms-md-5 gap-md-3">
-            <li class="nav-item"><a class="nav-link active" href="/" aria-current="page">Control room</a></li>
+          <ul class="navbar-nav ms-md-4 gap-md-2">
+            <li class="nav-item"><a class="nav-link" href="#operations">Operations</a></li>
+            <li class="nav-item"><a class="nav-link" href="#factory-floor">Factory floor</a></li>
+            <li class="nav-item"><a class="nav-link" href="#configuration">Configuration</a></li>
           </ul>
-          <span class="environment-label ms-md-auto mt-3 mt-md-0">UI preview · 001</span>
+          <span class="environment-label ms-md-auto mt-3 mt-md-0">Control room</span>
         </div>
       </nav>
     </header>
 
     <main id="main" class="container-xl py-4 py-md-5">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <p class="eyebrow mb-0">Personal AI workshop / Control room</p>
-        <span class="status-label"><span class="status-light" aria-hidden="true"></span>Hello World build</span>
-      </div>
+      <p id="test-notice" class="test-notice mb-4" hidden>
+        <strong>TEST FACTORY</strong> / Frozen, fictional data. No agents or real work are running.
+      </p>
+      <p id="preview-error" class="alert alert-danger" role="alert" hidden></p>
+      <noscript><p class="alert alert-warning">JavaScript is required to display the dashboard and execution timelines.</p></noscript>
 
-      <section class="hero-panel overflow-hidden" aria-labelledby="welcome-title">
-        <div class="row g-0 align-items-center">
-          <div class="col-lg-8 hero-copy">
-            <p class="eyebrow accent mb-4">The lights are on.</p>
-            <h1 id="welcome-title" class="display-2 fw-semibold mb-4">Hello, world<span class="accent">.</span></h1>
-            <p class="hero-description mb-4">Welcome to refAInery. A place to turn raw ideas into useful, reviewable work.</p>
-            <a class="btn btn-furnace px-4 py-3" href="#factory-floor">Explore the factory <span aria-hidden="true">↘</span></a>
+      <section id="operations" aria-labelledby="operations-title">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+          <div>
+            <p class="eyebrow accent mb-2">Control room / Execution telemetry</p>
+            <h1 id="operations-title" class="display-6 fw-semibold mb-0">Factory Operations</h1>
           </div>
-          <div class="col-lg-4 machinery-column" aria-hidden="true">
-            <div class="refinery-art">
-              <div class="smoke smoke-one"></div><div class="smoke smoke-two"></div>
-              <div class="stack stack-one"></div><div class="stack stack-two"></div><div class="stack stack-three"></div>
-              <div class="pipe pipe-one"></div><div class="pipe pipe-two"></div>
-              <div class="furnace"><span></span><span></span><span></span></div>
-              <div class="foundation"></div>
+          <div class="text-md-end">
+            <p id="snapshot-time" class="small text-body-secondary mb-2">Telemetry not connected</p>
+            <button id="refresh-preview" class="btn btn-outline-light btn-sm" type="button" hidden>Refresh fixtures</button>
+          </div>
+        </div>
+        <p id="operations-empty" class="panel p-4 text-body-secondary">No operational data is connected. Start the test launcher to explore fictional factory activity.</p>
+        <div id="operations-data" hidden>
+          <div id="operation-stats" class="row g-3 mb-4" aria-label="Factory statistics"></div>
+          <div class="row g-3">
+            <div class="col-lg-4">
+              <article class="panel p-4 h-100" aria-labelledby="outcome-title">
+                <p class="eyebrow mb-2">Quality control</p>
+                <h2 id="outcome-title" class="h5">Subagent outcomes</h2>
+                <p class="small text-body-secondary">Completed vs. failed executions</p>
+                <div id="outcome-chart"></div>
+                <p id="outcome-note" class="small text-body-secondary mb-0"></p>
+              </article>
             </div>
-            <p class="machine-caption">REF / WORKSHOP 001</p>
+            <div class="col-lg-8">
+              <article class="panel p-4 h-100" aria-labelledby="token-title">
+                <div class="d-flex flex-wrap justify-content-between gap-2">
+                  <div><p class="eyebrow mb-2">Resource consumption</p><h2 id="token-title" class="h5">Tokens over time</h2></div>
+                  <p id="token-total" class="small text-body-secondary"></p>
+                </div>
+                <div class="chart-legend mb-2"><span class="input-key">Input tokens</span><span class="output-key">Output tokens</span></div>
+                <div id="token-chart"></div>
+                <details class="small text-body-secondary mt-2">
+                  <summary>View token data · per interval, UTC</summary>
+                  <div class="table-responsive mt-2">
+                    <table class="table table-sm mb-0">
+                      <caption>Fictional token counts per interval, not cumulative totals.</caption>
+                      <thead><tr><th scope="col">Interval start (UTC)</th><th scope="col">Input</th><th scope="col">Output</th></tr></thead>
+                      <tbody id="token-table"></tbody>
+                    </table>
+                  </div>
+                </details>
+              </article>
+            </div>
           </div>
         </div>
-        <div class="hero-footer d-flex flex-wrap gap-3 justify-content-between">
-          <span>Interface online</span><span>Agent workflows not connected</span>
-        </div>
       </section>
-
-      <section id="test-workshop" class="pt-5" aria-labelledby="test-title" hidden>
-        <div class="alert alert-warning" role="status">
-          <strong>TEST FACTORY</strong> — fictional, read-only fixtures. No agents or real work are running.
-        </div>
-        <h2 id="test-title" class="h4">Test workshop</h2>
-        <p id="test-description" class="text-body-secondary">Edit the sibling repositories’ test JSON files and refresh to preview changes.</p>
-        <div id="test-agents" class="d-flex flex-wrap gap-2 mb-4"></div>
-        <div id="test-runs" class="row g-3"></div>
-      </section>
-      <p id="preview-error" class="alert alert-danger mt-4" role="alert" hidden></p>
 
       <section id="factory-floor" class="pt-5" aria-labelledby="floor-title">
         <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
-          <div><p class="eyebrow mb-2">From idea to output</p><h2 id="floor-title" class="h4 mb-0">The factory floor</h2></div>
-          <p class="text-body-secondary small mb-0">A first look at what comes next.</p>
+          <div><p class="eyebrow mb-2">Execution history → In flight</p><h2 id="floor-title" class="h3 mb-0">Factory Floor</h2></div>
+          <p class="small text-body-secondary mb-0">One lane per run · Current work on the right</p>
         </div>
-        <div class="row g-3">
-          <div class="col-md-4">
-            <article class="card station-card h-100">
-              <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-4"><span class="station-number">01 / INTAKE</span><span class="preview-badge">Planned</span></div>
-                <h3 class="h5">Bring an idea</h3>
-                <p class="text-body-secondary mb-0">Describe the work and choose the project context. Every run starts with a clear request.</p>
-              </div>
-            </article>
-          </div>
-          <div class="col-md-4">
-            <article class="card station-card h-100">
-              <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-4"><span class="station-number">02 / PRODUCTION</span><span class="preview-badge">Planned</span></div>
-                <h3 class="h5">Watch the work</h3>
-                <p class="text-body-secondary mb-0">Follow agents, tasks, and decisions as the factory works through your request.</p>
-              </div>
-            </article>
-          </div>
-          <div class="col-md-4">
-            <article class="card station-card h-100">
-              <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-4"><span class="station-number">03 / INSPECTION</span><span class="preview-badge">Planned</span></div>
-                <h3 class="h5">Review the output</h3>
-                <p class="text-body-secondary mb-0">Inspect the results and their history. Useful work, with a record of how it was made.</p>
-              </div>
-            </article>
-          </div>
-        </div>
+        <p id="floor-empty" class="panel p-4 text-body-secondary">No execution history is connected.</p>
+        <div id="floor-runs" class="d-grid gap-4"></div>
       </section>
+
+      <section id="configuration" class="pt-5" aria-labelledby="configuration-title">
+        <details class="panel p-4">
+          <summary id="configuration-title" class="configuration-summary">Factory Configuration <span class="small text-body-secondary ms-2">Agent definitions · optional reference</span></summary>
+          <div class="pt-4">
+            <p id="configuration-name" class="text-body-secondary">No configuration loaded.</p>
+            <div id="configuration-agents" class="row g-3"></div>
+            <p class="small text-body-secondary mt-3 mb-0">Definitions from the config repository, not active worker processes. Read-only reference.</p>
+          </div>
+        </details>
+      </section>
+
       <footer class="page-footer d-flex flex-wrap justify-content-between gap-2 mt-5 pt-4">
         <span>refAInery <span aria-hidden="true">/</span> Raw ideas. Refined output.</span>
-        <span>Hello World · No agents running</span>
+        <span>Design preview · No live orchestration</span>
       </footer>
     </main>
   </body>

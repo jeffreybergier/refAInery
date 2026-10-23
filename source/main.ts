@@ -35,6 +35,6 @@ async function main() {
 }
 
 main().catch(() => {
-  console.error("Startup failed. Check Node.js 22.18+, mode, port, and version 1 test fixtures. No production fallback was attempted.");
+  console.error("Startup failed. Check Node.js 22.18+, mode, port, config fixture v1, storage fixture v2, and referenced test transcripts. No production fallback was attempted.");
   process.exitCode = 1;
 });

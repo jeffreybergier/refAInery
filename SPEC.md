@@ -498,18 +498,35 @@ SDK setup, authentication, or agent execution. No alternate credentials are
 used: this mode needs none. It binds to loopback and does not inherit provider
 credentials or production data settings.
 
-The initial version-1 fixture contract uses `test/config.json` for fictional
-agents/workshop settings and `test/workshop.json` for fictional runs/tasks.
+The configuration fixture contract uses version-1 `test/config.json` for
+fictional agents/workshop settings. Storage fixture version 2 uses
+`test/workshop.json` for operational telemetry and timed executions, and
+`test/transcripts/` for explicitly labeled sample HTML, not Pi exports.
 These are presentation fixtures, not production configuration schemas or
 scheduler checkpoints. They permit designing the UI and data relationships
 before real orchestration. All simulated state is visibly labeled as test
 data; no real activity, completion, or approval is implied.
 
+The Control Room presents Factory Operations (simulated factory state, derived
+task counts, subagent outcomes, and input/output tokens over time), followed
+by Factory Floor (one horizontal execution timeline per run). Historical
+stages are ordered by start time, with in-flight stages on the right; parallel
+executions share a stage and stack vertically. Unstarted tasks are listed
+separately. Finished executions link to sample transcripts when available.
+Config-derived agent definitions live in a collapsed Factory Configuration
+section at the bottom. Static introductory cards are no longer displayed.
+
+Transcript endpoints are test-only, allow only referenced fixture files, and
+reject path escapes. Reports open separately under a script-free,
+opaque-origin CSP sandbox; they are not embedded into the dashboard. Actual
+Pi HTML export generation remains unimplemented.
+
 The preview is read-only. It validates fixture versions, test markers, IDs,
 statuses, and agent references; rejects production paths and path escapes;
 and never falls back to production. Missing/invalid initial data prevents
-startup. Edits are re-read on page refresh, with invalid edits producing a
-visible error. This fixture reload behavior does not change the immutable
+startup. Edits are re-read on page refresh or the Refresh fixtures action;
+invalid edits clear stale telemetry and produce a visible error. This fixture
+reload behavior does not change the immutable
 per-run production configuration rule. No automatic reset or promotion from
 test into production is allowed. Neither area may contain credentials.
 
