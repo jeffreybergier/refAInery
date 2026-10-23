@@ -4,6 +4,7 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -128,7 +129,7 @@ exec node /app/source/server.ts
     env["STORAGE_REPO"] = credentials["STORAGE_REPO"]
     container_name = f"refainery-{os.getpid()}"
     command = [
-        engine, "run", "--rm", "--name", container_name, "-it",
+        engine, "run", "--rm", "--name", container_name,
         "-e", "GH_TOKEN",
         "-e", "STORAGE_REPO",
         "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
@@ -144,20 +145,38 @@ exec node /app/source/server.ts
     ]
     process = None
     try:
-        process = subprocess.Popen(command, env=env)
+        # Keep the container client out of the terminal's foreground process
+        # group so this launcher can handle Ctrl-C and stop the container.
+        process = subprocess.Popen(command, env=env, start_new_session=True)
         return process.wait()
     except FileNotFoundError:
         fail(f"{engine_name} disappeared before it could start.")
     except KeyboardInterrupt:
-        # Ctrl-C can interrupt the attached Docker/Podman client before it
-        # stops the container. Explicitly stop it so it cannot outlive us.
-        subprocess.run(
-            [engine, "stop", "--time", "5", container_name],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if process is not None:
-            process.wait()
+        # Ignore additional Ctrl-C presses during cleanup; they otherwise can
+        # interrupt the stop request and leave the container running.
+        previous_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            subprocess.run(
+                [engine, "stop", "--time", "5", container_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+                check=False,
+            )
+            if process is not None:
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    subprocess.run(
+                        [engine, "kill", container_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                        check=False,
+                    )
+                    process.wait(timeout=10)
+        finally:
+            signal.signal(signal.SIGINT, previous_handler)
         print("\n🛑 Server stopped; container removed.")
         return 130
 
