@@ -513,7 +513,7 @@ by Factory Floor (one horizontal execution timeline per run). Historical
 stages are ordered by start time, with in-flight stages on the right; parallel
 executions share a stage and stack vertically. Unstarted tasks are listed
 separately. Finished executions link to sample transcripts when available.
-Config-derived agent definitions live in a collapsed Factory Configuration
+Config-derived agent definitions live in an always-visible Factory Specification
 section at the bottom. Static introductory cards are no longer displayed.
 
 Transcript endpoints are test-only, allow only referenced fixture files, and

@@ -18,7 +18,7 @@ before Pi or real orchestration is connected.
    scroll to current/latest work and have keyboard-accessible scrolling and
    Earlier/Latest buttons. Unstarted tasks are listed separately, not drawn as
    past executions. Finished tasks link to sample HTML transcripts when present.
-3. **Factory Configuration** — collapsed reference section at the bottom with
+3. **Factory Specification** — always-visible reference section at the bottom with
    config-derived agent definitions. These are not active worker processes.
 
 Use **Refresh fixtures** to reload data without reloading the page. Invalid
