@@ -10,7 +10,7 @@ import sys
 IMAGE = "ghcr.io/jeffreybergier/altivec-intelligence:latest"
 ITEM = "Dev Key - refAInery"
 FIELD = "GITHUB_TOKEN"
-WORKSPACE = "/repo/user"
+WORKSPACE = "/source"
 
 
 def fail(message):
@@ -68,6 +68,9 @@ def main():
     print("\n🐳 2/3  Checking container runtime...")
     engine, engine_name = select_engine()
     checkout = os.path.dirname(os.path.abspath(__file__))
+    sdk_archives = os.path.expanduser("~/.altivec/.altivec-sdk")
+    if not os.path.isdir(sdk_archives):
+        fail(f"SDK archive directory does not exist: {sdk_archives}")
     print(f"✅      {engine_name.capitalize()} is ready")
 
     # The static in-container script never includes the secret. `-e GH_TOKEN`
@@ -109,8 +112,8 @@ if ! sdks_installed; then
   sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
 fi
 printf '\n✅ All Altivec SDKs are installed.\n'
-printf '\n📂 Workspace: /repo/user\n\n'
-cd /repo/user
+printf '\n📂 Read-only source: /source\n\n'
+cd /source
 exec bash -l
 '''
 
@@ -120,8 +123,8 @@ exec bash -l
     command = [
         engine, "run", "--rm", "-it",
         "-e", "GH_TOKEN",
-        "-v", f"{os.path.expanduser('~')}:/root",
-        "-v", f"{checkout}:{WORKSPACE}",
+        "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
+        "-v", f"{checkout}:{WORKSPACE}:ro",
         "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
         "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
         "-w", WORKSPACE,
