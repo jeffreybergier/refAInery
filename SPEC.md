@@ -344,10 +344,20 @@ and incomplete-clone protections as storage. Do not automatically reset, clean,
 or pull on launch; configuration updates are explicit operator actions.
 Authentication remains launch-time and 1Password-sourced.
 
-Development edits can be made in the container-managed checkout. A host bind
-mount may later be offered as an explicit development-only alternative, but is
-not the default. Neither container removal nor routine cleanup may remove the
-configuration volume. Git synchronization and backup remain separate operations.
+The current development launcher uses the host bind-mount alternative: clone
+`refAInery-config` beside the application checkout in `Vibing`, then mount it
+read-only at `/app/config`. The launcher checks that the checkout exists before
+fetching credentials and never clones or updates it automatically. Operators
+can edit that host checkout during development; the container cannot write to
+it through this mount. This does not restrict the permissions of any GitHub
+credential available to the container.
+
+The container-managed named volume remains the target default; its cloning and
+update lifecycle is not yet implemented. For that lifecycle, a trusted setup
+process needs read-write access for initialization and explicit updates, while
+agent execution mounts the configuration read-only. Neither container removal
+nor routine cleanup may remove the configuration volume. Git synchronization
+and backup remain separate operations.
 
 Agents must not modify live configuration or their frozen run configuration.
 They may propose changes in an approved output area for operator review. Enforce

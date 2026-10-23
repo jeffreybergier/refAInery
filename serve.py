@@ -64,13 +64,21 @@ def select_engine():
 
 def main():
     print("\n🚀 refAInery\n" + "─" * 40)
+    checkout = os.path.dirname(os.path.abspath(__file__))
+    config_checkout = os.path.join(os.path.dirname(checkout), "refAInery-config")
+    if not os.path.isdir(config_checkout) or not os.path.exists(
+        os.path.join(config_checkout, ".git")
+    ):
+        fail(
+            f"configuration checkout is missing: {config_checkout}. "
+            "Clone refAInery-config beside refAInery before launching."
+        )
     print("\n🔐 1/5  Getting GitHub credentials from 1Password...")
     credentials = get_credentials()
     print("✅      GitHub token and storage repository retrieved")
 
     print("\n🐳 2/5  Checking container runtime...")
     engine, engine_name = select_engine()
-    checkout = os.path.dirname(os.path.abspath(__file__))
     sdk_archives = os.path.expanduser("~/.altivec/.altivec-sdk")
     if not os.path.isdir(sdk_archives):
         fail(f"SDK archive directory does not exist: {sdk_archives}")
@@ -134,6 +142,11 @@ exec node /app/source/server.ts
         "-e", "STORAGE_REPO",
         "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
         "-v", f"{checkout}/source:{WORKSPACE}/source:ro",
+        # Development-only host checkout; agents cannot edit live config.
+        "--mount", (
+            f"type=bind,source={config_checkout},"
+            f"target={WORKSPACE}/config,readonly"
+        ),
         "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
         "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
         "-v", "developer_cache:/cache",
