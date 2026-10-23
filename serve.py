@@ -63,11 +63,11 @@ def select_engine():
 
 def main():
     print("\n🚀 refAInery\n" + "─" * 40)
-    print("\n🔐 1/3  Getting GitHub credentials from 1Password...")
+    print("\n🔐 1/5  Getting GitHub credentials from 1Password...")
     credentials = get_credentials()
     print("✅      GitHub token and storage repository retrieved")
 
-    print("\n🐳 2/3  Checking container runtime...")
+    print("\n🐳 2/5  Checking container runtime...")
     engine, engine_name = select_engine()
     checkout = os.path.dirname(os.path.abspath(__file__))
     sdk_archives = os.path.expanduser("~/.altivec/.altivec-sdk")
@@ -82,7 +82,7 @@ command -v gh >/dev/null || { echo "❌ gh CLI is missing from the image." >&2; 
 command -v git >/dev/null || { echo "❌ git CLI is missing from the image." >&2; exit 1; }
 command -v altivec-sdk >/dev/null || { echo "❌ altivec-sdk is missing from the image." >&2; exit 1; }
 command -v node >/dev/null || { echo "❌ Node.js is missing from the image." >&2; exit 1; }
-printf '\n🔑 3/4  Checking GitHub authentication...\n\n'
+printf '\n🔑 3/5  Checking GitHub authentication...\n\n'
 printf '   gh auth status\n'
 gh auth status --hostname github.com
 printf '\n👤 Authenticated GitHub user: '
@@ -97,7 +97,7 @@ else
   exit 1
 fi
 printf '\n✅ GitHub authentication preflight passed.\n'
-printf '\n🧰 4/4  Checking Altivec SDK installations...\n\n'
+printf '\n🧰 4/5  Checking Altivec SDK installations...\n\n'
 sdk_status=$(altivec-sdk status)
 printf '%s\n' "$sdk_status"
 sdks_installed() {
@@ -115,7 +115,7 @@ if ! sdks_installed; then
   sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
 fi
 printf '\n✅ All Altivec SDKs are installed.\n'
-printf '\n📦 Cloning private storage repository...\n'
+printf '\n📦 5/5  Cloning private storage repository...\n'
 git clone "$STORAGE_REPO" /app/storage
 printf '\n🌐 Starting Hello World server on 0.0.0.0:8080...\n\n'
 cd /app
