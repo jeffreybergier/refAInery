@@ -73,6 +73,19 @@ class ConfigMountTests(unittest.TestCase):
                     "offline-test-token",
                 )
 
+    def test_local_assets_and_loopback_publishing(self):
+        self.assertEqual(serve.main(), 0)
+        command = self.popen.call_args.args[0]
+        for filename in ("package.json", "package-lock.json"):
+            self.assertIn(
+                f"{self.checkout}/{filename}:/app/{filename}:ro", command
+            )
+        self.assertEqual(command[command.index("-p") + 1],
+                         "127.0.0.1:8080:8080")
+        script = command[-1]
+        self.assertIn("npm ci --omit=dev --ignore-scripts", script)
+        self.assertIn("exec node /app/source/main.ts", script)
+
     def assert_missing_checkout_fails_early(self):
         with self.assertRaises(SystemExit) as error:
             serve.main()

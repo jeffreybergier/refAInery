@@ -91,6 +91,13 @@ command -v gh >/dev/null || { echo "❌ gh CLI is missing from the image." >&2; 
 command -v git >/dev/null || { echo "❌ git CLI is missing from the image." >&2; exit 1; }
 command -v altivec-sdk >/dev/null || { echo "❌ altivec-sdk is missing from the image." >&2; exit 1; }
 command -v node >/dev/null || { echo "❌ Node.js is missing from the image." >&2; exit 1; }
+command -v npm >/dev/null || { echo "❌ npm is missing from the image." >&2; exit 1; }
+node -e '
+const [major, minor] = process.versions.node.split(".").map(Number);
+if (major < 22 || (major === 22 && minor < 18)) {
+  console.error("Node.js 22.18+ is required.");
+  process.exit(1);
+}'
 printf '\n🔑 3/5  Checking GitHub authentication...\n\n'
 printf '   gh auth status\n'
 gh auth status --hostname github.com
@@ -128,7 +135,9 @@ printf '\n📦 5/5  Cloning private storage repository...\n'
 git clone "$STORAGE_REPO" /app/storage
 printf '\n🌐 Starting Hello World server on 0.0.0.0:8080...\n\n'
 cd /app
-exec node /app/source/server.ts
+printf 'Installing locked application dependencies...\n'
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+exec node /app/source/main.ts
 '''
 
     print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
@@ -142,6 +151,8 @@ exec node /app/source/server.ts
         "-e", "STORAGE_REPO",
         "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
         "-v", f"{checkout}/source:{WORKSPACE}/source:ro",
+        "-v", f"{checkout}/package.json:{WORKSPACE}/package.json:ro",
+        "-v", f"{checkout}/package-lock.json:{WORKSPACE}/package-lock.json:ro",
         # Development-only host checkout; agents cannot edit live config.
         "--mount", (
             f"type=bind,source={config_checkout},"
@@ -150,7 +161,7 @@ exec node /app/source/server.ts
         "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
         "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
         "-v", "developer_cache:/cache",
-        "-p", "0.0.0.0:8080:8080",
+        "-p", "127.0.0.1:8080:8080",
         "-w", WORKSPACE,
         "--entrypoint", "bash",
         IMAGE,
