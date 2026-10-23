@@ -178,7 +178,8 @@ Distinguish three identities:
   earlier outcomes.
 
 Use stable identifiers and run-relative paths in refAInery records. The initial
-layout under `/app/storage` is:
+production layout under `/app/storage/prod` is (the repository root also
+contains a separate `test/` fixture area; see section 6.11):
 
 ```text
 storage.json
@@ -368,7 +369,8 @@ responsibility, separate from normal agent work.
 ### 6.8 Configuration layout and contract
 
 Use JSON for structured definitions and Markdown for instructions. The initial
-layout under `/app/config` is:
+production layout under `/app/config/prod` is (the repository root also
+contains a separate `test/` fixture area; see section 6.11):
 
 ```text
 README.md
@@ -480,6 +482,36 @@ non-secret credential identifiers and resolve their values through launch-time
 1Password authentication. Do not persist resolved secret values when recording
 effective configuration. Private repository access is not a substitute for
 secret-handling rules or extension review.
+
+### 6.11 Production and test design environments
+
+Both `refAInery-config` and `refAInery-storage` have root-level `prod/` and
+`test/` directories. Repository clone/mount destinations remain `/app/config`
+and `/app/storage`; production application data is scoped beneath their
+`prod/` directories. The production contracts described above apply within
+those production subdirectories, not to test fixtures.
+
+Before Pi integration, `tests/serve.py` is a maintained fake-data counterpart
+to the root launcher. It starts the same Node application locally using the
+sibling repositories' `test/` directories, without Docker, 1Password, GitHub,
+SDK setup, authentication, or agent execution. No alternate credentials are
+used: this mode needs none. It binds to loopback and does not inherit provider
+credentials or production data settings.
+
+The initial version-1 fixture contract uses `test/config.json` for fictional
+agents/workshop settings and `test/workshop.json` for fictional runs/tasks.
+These are presentation fixtures, not production configuration schemas or
+scheduler checkpoints. They permit designing the UI and data relationships
+before real orchestration. All simulated state is visibly labeled as test
+data; no real activity, completion, or approval is implied.
+
+The preview is read-only. It validates fixture versions, test markers, IDs,
+statuses, and agent references; rejects production paths and path escapes;
+and never falls back to production. Missing/invalid initial data prevents
+startup. Edits are re-read on page refresh, with invalid edits producing a
+visible error. This fixture reload behavior does not change the immutable
+per-run production configuration rule. No automatic reset or promotion from
+test into production is allowed. Neither area may contain credentials.
 
 ## 7. Proposed logical architecture
 
@@ -696,3 +728,4 @@ These criteria are provisional until the first workflow is chosen:
 | D-016 | JSON agent/workflow/policy definitions and Markdown instructions; schemas and enforcement remain application-owned | Confirmed; detailed schema TBD |
 | D-017 | Immutable resolved configuration and resources per run; no active-run hot reload or recovery substitution | Confirmed |
 | D-018 | Explicit Pi resource loading, reviewed executable extensions, and no persisted credentials in config or snapshots | Confirmed |
+| D-019 | Root-level prod/test namespaces in configuration and storage repositories; credential-free local test launcher with read-only fictional fixtures | Confirmed; initial preview implemented |

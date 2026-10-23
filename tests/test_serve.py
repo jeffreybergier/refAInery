@@ -82,6 +82,9 @@ class ConfigMountTests(unittest.TestCase):
             )
         self.assertEqual(command[command.index("-p") + 1],
                          "127.0.0.1:8080:8080")
+        self.assertIn("REFAINERY_MODE=production", command)
+        self.assertIn("REFAINERY_CONFIG_DIR=/app/config/prod", command)
+        self.assertIn("REFAINERY_STORAGE_DIR=/app/storage/prod", command)
         script = command[-1]
         self.assertIn("npm ci --omit=dev --ignore-scripts", script)
         self.assertIn("exec node /app/source/main.ts", script)

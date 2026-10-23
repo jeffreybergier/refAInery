@@ -1,10 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { loadPreview } from "./preview.ts";
+import type { PreviewDirectories } from "./preview.ts";
 
 // Explicit routes keep source, configuration, and credentials out of the web root.
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
   ["/assets/refainery.css", ["./public/refainery.css", "text/css; charset=utf-8"]],
+  ["/assets/preview.js", ["./public/preview.js", "text/javascript; charset=utf-8"]],
   ["/assets/bootstrap.min.css", [
     "../node_modules/bootstrap/dist/css/bootstrap.min.css", "text/css; charset=utf-8",
   ]],
@@ -13,12 +16,13 @@ const assets = new Map([
   ]],
 ]);
 
-export function createAppServer() {
+export function createAppServer(preview?: PreviewDirectories) {
   return createServer(async (request, response) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Content-Security-Policy",
       "default-src 'none'; style-src 'self'; script-src 'self'; " +
-      "img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+      "img-src 'self' data:; connect-src 'self'; base-uri 'none'; " +
+      "frame-ancestors 'none'; form-action 'none'");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("Cache-Control", "no-store");
 
@@ -30,6 +34,19 @@ export function createAppServer() {
 
     // No user-supplied path is ever passed to the filesystem.
     const pathname = (request.url ?? "/").split("?")[0];
+    if (pathname === "/api/preview") {
+      try {
+        const data = preview ? await loadPreview(preview) : { mode: "production" };
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        response.end(request.method === "HEAD" ? undefined : JSON.stringify(data));
+      } catch {
+        response.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
+        response.end(request.method === "HEAD" ? undefined : JSON.stringify({
+          error: "Test fixtures unavailable or invalid. Check the test JSON files.",
+        }));
+      }
+      return;
+    }
     const asset = assets.get(pathname);
     if (!asset) {
       response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });

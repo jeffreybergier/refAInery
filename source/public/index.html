@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/assets/bootstrap.min.css">
     <link rel="stylesheet" href="/assets/refainery.css">
     <script src="/assets/bootstrap.bundle.min.js" defer></script>
+    <script src="/assets/preview.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -62,6 +63,17 @@
           <span>Interface online</span><span>Agent workflows not connected</span>
         </div>
       </section>
+
+      <section id="test-workshop" class="pt-5" aria-labelledby="test-title" hidden>
+        <div class="alert alert-warning" role="status">
+          <strong>TEST FACTORY</strong> — fictional, read-only fixtures. No agents or real work are running.
+        </div>
+        <h2 id="test-title" class="h4">Test workshop</h2>
+        <p id="test-description" class="text-body-secondary">Edit the sibling repositories’ test JSON files and refresh to preview changes.</p>
+        <div id="test-agents" class="d-flex flex-wrap gap-2 mb-4"></div>
+        <div id="test-runs" class="row g-3"></div>
+      </section>
+      <p id="preview-error" class="alert alert-danger mt-4" role="alert" hidden></p>
 
       <section id="factory-floor" class="pt-5" aria-labelledby="floor-title">
         <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
