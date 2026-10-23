@@ -121,7 +121,7 @@ exec node /app/source/server.ts
     print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
     env = os.environ.copy()
     env["GH_TOKEN"] = token
-    container_name = "refAInery"
+    container_name = f"refainery-{os.getpid()}"
     command = [
         engine, "run", "--rm", "--name", container_name, "-it",
         "-e", "GH_TOKEN",
