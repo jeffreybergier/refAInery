@@ -72,7 +72,10 @@ def main():
     container_script = r'''set -eu
 command -v gh >/dev/null || { echo "gh CLI is missing from the image." >&2; exit 1; }
 command -v git >/dev/null || { echo "git CLI is missing from the image." >&2; exit 1; }
+echo "Checking GitHub CLI authentication..."
 gh auth status --hostname github.com
+echo "Authenticated GitHub user:"
+gh api user --jq .login
 gh auth setup-git --hostname github.com
 # Ask Git's configured credential helper for HTTPS credentials without ever
 # printing the returned password/token.
@@ -87,7 +90,7 @@ cd /repo/user
 exec bash -l
 '''
 
-    print(f"Preflight 3/3: starting {engine_name}, checking gh and git auth...")
+    print(f"Preflight 3/3: starting {engine_name}, checking gh and git auth...", flush=True)
     env = os.environ.copy()
     env["GH_TOKEN"] = token
     command = [
@@ -95,8 +98,9 @@ exec bash -l
         "-e", "GH_TOKEN",
         "-v", f"{checkout}:{WORKSPACE}",
         "-w", WORKSPACE,
+        "--entrypoint", "bash",
         IMAGE,
-        "bash", "-lc", container_script,
+        "-lc", container_script,
     ]
     try:
         return subprocess.run(command, env=env).returncode
