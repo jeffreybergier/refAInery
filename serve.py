@@ -9,7 +9,7 @@ import sys
 
 IMAGE = "ghcr.io/jeffreybergier/altivec-intelligence:latest"
 ITEM = "Dev Key - refAInery"
-FIELD = "GITHUB_TOKEN"
+FIELDS = ("GITHUB_TOKEN", "STORAGE_REPO")
 WORKSPACE = "/app"
 
 
@@ -18,8 +18,8 @@ def fail(message):
     raise SystemExit(1)
 
 
-def get_github_token():
-    """Fetch the token without displaying it or putting it in process arguments."""
+def get_credentials():
+    """Fetch required values without displaying them or putting them in argv."""
     op = shutil.which("op")
     if not op:
         fail("1Password CLI (`op`) is not installed or not on PATH.")
@@ -34,15 +34,17 @@ def get_github_token():
 
     try:
         item = json.loads(result.stdout)
-        fields = item.get("fields", [])
-        values = [field.get("value") for field in fields
-                  if field.get("label") == FIELD]
+        item_fields = item.get("fields", [])
+        credentials = {}
+        for name in FIELDS:
+            values = [field.get("value") for field in item_fields
+                      if field.get("label") == name]
+            if not values or not isinstance(values[0], str) or not values[0]:
+                fail(f"item '{ITEM}' has no non-empty '{name}' field.")
+            credentials[name] = values[0]
     except (json.JSONDecodeError, AttributeError, TypeError):
         fail("1Password returned an unexpected item format.")
-
-    if not values or not isinstance(values[0], str) or not values[0]:
-        fail(f"item '{ITEM}' has no non-empty '{FIELD}' field.")
-    return values[0]
+    return credentials
 
 
 def select_engine():
@@ -61,9 +63,9 @@ def select_engine():
 
 def main():
     print("\n🚀 refAInery\n" + "─" * 40)
-    print("\n🔐 1/3  Getting GitHub token from 1Password...")
-    token = get_github_token()
-    print("✅      Token retrieved (value hidden)")
+    print("\n🔐 1/3  Getting GitHub credentials from 1Password...")
+    credentials = get_credentials()
+    print("✅      GitHub token and storage repository retrieved")
 
     print("\n🐳 2/3  Checking container runtime...")
     engine, engine_name = select_engine()
@@ -113,6 +115,8 @@ if ! sdks_installed; then
   sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
 fi
 printf '\n✅ All Altivec SDKs are installed.\n'
+printf '\n📦 Cloning private storage repository...\n'
+git clone "$STORAGE_REPO" /app/storage
 printf '\n🌐 Starting Hello World server on 0.0.0.0:8080...\n\n'
 cd /app
 exec node /app/source/server.ts
@@ -120,13 +124,15 @@ exec node /app/source/server.ts
 
     print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
     env = os.environ.copy()
-    env["GH_TOKEN"] = token
+    env["GH_TOKEN"] = credentials["GITHUB_TOKEN"]
+    env["STORAGE_REPO"] = credentials["STORAGE_REPO"]
     container_name = f"refainery-{os.getpid()}"
     command = [
         engine, "run", "--rm", "--name", container_name, "-it",
         "-e", "GH_TOKEN",
+        "-e", "STORAGE_REPO",
         "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
-        "-v", f"{checkout}:{WORKSPACE}:ro",
+        "-v", f"{checkout}/source:{WORKSPACE}/source:ro",
         "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
         "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
         "-v", "developer_cache:/cache",
