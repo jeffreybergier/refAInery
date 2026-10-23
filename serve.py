@@ -121,8 +121,9 @@ exec node /app/source/server.ts
     print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
     env = os.environ.copy()
     env["GH_TOKEN"] = token
+    container_name = f"refainery-{os.getpid()}"
     command = [
-        engine, "run", "--rm", "-it",
+        engine, "run", "--rm", "--name", container_name, "-it",
         "-e", "GH_TOKEN",
         "-v", f"{sdk_archives}:/root/.altivec-sdk:ro",
         "-v", f"{checkout}:{WORKSPACE}:ro",
@@ -135,11 +136,23 @@ exec node /app/source/server.ts
         IMAGE,
         "-lc", container_script,
     ]
+    process = None
     try:
-        return subprocess.run(command, env=env).returncode
+        process = subprocess.Popen(command, env=env)
+        return process.wait()
     except FileNotFoundError:
         fail(f"{engine_name} disappeared before it could start.")
     except KeyboardInterrupt:
+        # Ctrl-C can interrupt the attached Docker/Podman client before it
+        # stops the container. Explicitly stop it so it cannot outlive us.
+        subprocess.run(
+            [engine, "stop", "--time", "5", container_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if process is not None:
+            process.wait()
+        print("\n🛑 Server stopped; container removed.")
         return 130
 
 
