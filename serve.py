@@ -79,6 +79,7 @@ def main():
 command -v gh >/dev/null || { echo "❌ gh CLI is missing from the image." >&2; exit 1; }
 command -v git >/dev/null || { echo "❌ git CLI is missing from the image." >&2; exit 1; }
 command -v altivec-sdk >/dev/null || { echo "❌ altivec-sdk is missing from the image." >&2; exit 1; }
+command -v node >/dev/null || { echo "❌ Node.js is missing from the image." >&2; exit 1; }
 printf '\n🔑 3/4  Checking GitHub authentication...\n\n'
 printf '   gh auth status\n'
 gh auth status --hostname github.com
@@ -112,9 +113,9 @@ if ! sdks_installed; then
   sdks_installed || { echo "❌ SDK installation verification failed." >&2; exit 1; }
 fi
 printf '\n✅ All Altivec SDKs are installed.\n'
-printf '\n📂 Read-only source: /app\n\n'
+printf '\n🌐 Starting Hello World server on 0.0.0.0:8080...\n\n'
 cd /app
-exec bash -l
+exec node /app/source/server.ts
 '''
 
     print(f"\n📦 Starting container with {engine_name}...\n", flush=True)
@@ -127,6 +128,8 @@ exec bash -l
         "-v", f"{checkout}:{WORKSPACE}:ro",
         "-v", "developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK",
         "-v", "developer_altivec-sdk-modern:/osxcross/modern/SDK",
+        "-v", "developer_cache:/cache",
+        "-p", "0.0.0.0:8080:8080",
         "-w", WORKSPACE,
         "--entrypoint", "bash",
         IMAGE,
