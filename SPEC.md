@@ -1,7 +1,7 @@
 # refAInery — AI Factory Specification
 
 **Status:** Draft 0.1 — starting point for collaborative design  
-**Last updated:** 2026-10-22
+**Last updated:** 2026-10-23
 
 ## 1. Purpose
 
@@ -36,8 +36,15 @@ collaboration are called out explicitly.
   arguments.
 - There will be no `compose.yml` as the application launch mechanism. The
   Python launcher will start the published Docker image directly.
-- This phase is specification writing only. No application implementation or
-  build is in scope yet.
+- A launcher and Hello World server exist. The workflow and storage design
+  below is agreed direction, not a claim that those features are implemented.
+  This phase documents that design; implementation is separate.
+- Prompts start an orchestrator agent, which defines a basic directed acyclic
+  graph (DAG) of subagent tasks. A scheduler executes eligible tasks, and all
+  results return to the orchestrator for decisions about subsequent work.
+- Storage uses JSON workflow checkpoints, opaque Pi conversation files, and
+  HTML historical reports. The storage repository is managed inside the
+  container on a persistent named volume, not a host checkout bind mount.
 
 ## 3. Product intent (working hypothesis)
 
@@ -47,7 +54,9 @@ selected project material, and inspect/review the resulting artifacts.
 
 The name “AI Factory” suggests repeatable production, but does not yet define
 what is produced. The first product workflow and its users must be agreed
-before implementation. See [Open questions](#11-open-questions).
+before implementing that workflow. The orchestration and storage model below
+is agreed, while the first concrete output remains open. See
+[Open questions](#12-open-questions).
 
 ## 4. Goals
 
@@ -125,6 +134,187 @@ published package and documentation before implementation. Avoid silently
 depending on global Pi installations: package-level dependency management
 should make the runtime reproducible.
 
+### 6.3 Container-managed storage checkout
+
+The storage repository is `refAInery-storage`. Mount a Docker-managed named
+volume, `refainery-storage`, at `/app/storage`. Do not bind-mount the host's
+`Vibing/refAInery-storage` checkout. Git checkout and repository management
+continue to happen inside the container.
+
+This replaces the current launcher's disposable clone at `/app/storage`:
+
+1. Attach the named volume and acquire exclusive storage ownership before
+   accessing or initializing the checkout.
+2. On first use of an empty volume, clone the private storage repository into
+   `/app/storage` using launch-time, 1Password-sourced authentication.
+3. On subsequent launches, validate and reuse the existing checkout, including
+   uncommitted state. Do not clone afresh over existing recovery data.
+4. Recover active runs before scheduling new work according to the recovery
+   policy below.
+
+Use a lock outside the clone destination or another initialization-safe lock
+mechanism so ownership bookkeeping does not prevent cloning into an empty
+checkout. An incomplete clone or unexpected volume contents must produce an
+explicit recovery error, not trigger destructive cleanup.
+
+Container shutdown/removal must not remove the named volume. The volume is
+local persistent storage, not a remote backup. Local durable writes are the
+crash-recovery mechanism; Git commits and remote synchronization are separate
+operations. Recovery must not depend on a successful commit or push. Do not
+run automatic reset, clean, or pull operations over recovery data. Backup,
+commit, and synchronization policies remain open; no automatic push is assumed.
+
+### 6.4 Storage layout and ownership
+
+Distinguish three identities:
+
+- **Run:** one user request and the orchestration performed to fulfill it.
+- **Task:** one logical node in the DAG.
+- **Attempt:** one execution of a task; retries create new attempts and retain
+  earlier outcomes.
+
+Use stable identifiers and run-relative paths in refAInery records. The initial
+layout under `/app/storage` is:
+
+```text
+storage.json
+active/
+  <run-id>/
+    request.json
+    checkpoints/
+      000001.json
+      000002.json
+    orchestrator/
+      turns/
+        <turn-id>/
+          input.json
+          decision.json
+    tasks/
+      <task-id>/
+        attempts/
+          <attempt-id>/
+            input.json
+            result.json
+            artifacts/
+    pi/
+      orchestrator/
+      tasks/
+        <task-id>/<attempt-id>/
+history/
+  <year>/<month>/<run-id>/
+    ...retained run data...
+    report.html
+runtime/
+  ...writer-lock metadata and temporary bookkeeping...
+```
+
+`storage.json` records the storage-format version and storage identity, never
+credentials. `request.json` preserves the original prompt, submission time,
+approved context, and initial configuration. Orchestrator turns preserve the
+exact input presented and the structured decision returned. Task attempts
+preserve exact inputs, structured outcomes, and artifacts.
+
+Pi owns conversation persistence; refAInery owns workflow state. Keep Pi's JSONL
+session files opaque to the application storage schema and reference them by
+session identity and path. Use one persistent orchestrator conversation per
+run and isolated subagent sessions per attempt. Reopen the recorded session
+explicitly rather than selecting the most recent session. Configure Pi storage
+inside the run directory; verify the pinned Pi API and relocation behavior
+before implementation. A transcript alone is not a scheduler recovery record.
+
+### 6.5 Authoritative JSON checkpoints
+
+Use numbered, immutable JSON snapshots of complete workflow control state.
+The highest committed, valid revision is authoritative; older revisions retain
+transition history. Do not maintain independently authoritative queue, DAG,
+inbox, and task-status files. Indexes and UI caches must be rebuildable.
+
+Each checkpoint records:
+
+- Schema version, run ID, revision, and timestamps.
+- Run status, optional parent run, and final outcome when terminal.
+- Workflow/application version, model configuration, tool policy, and limits.
+- DAG revision, task definitions, and dependencies.
+- Attempt statuses, worker identities, timestamps, and Pi session references.
+- Result references and their delivery and acceptance states.
+- Current orchestrator turn, pending result IDs, and applied decisions.
+- Pending approvals and recorded operator decisions.
+- The transition that produced the checkpoint and its reason.
+
+Keep large inputs, results, artifacts, and transcripts outside checkpoints and
+reference them. Finalize referenced immutable files before committing a
+checkpoint. Write each checkpoint to a temporary sibling file, flush it, rename
+it to its final numbered name, and flush the containing directory where
+supported. Only then acknowledge the transition or dispatch subsequent work.
+The persistence implementation must validate these guarantees on the mounted
+filesystem, including forced interruption tests.
+
+Ignore unfinished temporary files during recovery. A corrupt committed
+checkpoint or a missing referenced file requires explicit recovery; do not
+silently roll back to older state and potentially repeat actions. Unreferenced
+files from an interrupted transition are not proof that work was accepted.
+
+Allow only one scheduler/workflow-state writer per storage directory. Subagents
+may run concurrently, but submit workflow changes through that writer rather
+than editing checkpoint files. Their separate Pi session files remain owned by
+the respective agent sessions. Locks must prevent overlapping writers across
+containers; stale ownership recovery must not rely on a PID alone.
+
+### 6.6 Result delivery, recovery, and archival
+
+Subagent results always return to the orchestrator. A successful attempt does
+not by itself satisfy a DAG dependency: the orchestrator must accept its result
+before dependent tasks become eligible. Results include stable result, task,
+and attempt IDs; outcome; summary; structured output; artifact references; and
+error details when applicable. Failures and cancellations also return outcomes.
+
+Persist result handling through these stages:
+
+1. Result durably recorded and pending orchestrator review.
+2. Result included in a recorded orchestrator turn.
+3. Orchestrator decision committed with the resulting workflow-state change.
+
+Serialize orchestrator turns even when subagents run concurrently. Persist
+inputs before dispatch and decisions before applying subsequent actions. Stable
+result and decision IDs prevent duplicate application during recovery. The
+orchestrator may accept, reject, retry, or add work. New dependencies may affect
+unstarted tasks only; reject cycles and preserve executed task definitions.
+Represent revision work as new nodes rather than rewriting execution history.
+
+On recovery, reconcile incomplete turns and recorded results, and mark attempts
+whose workers are gone as interrupted. Never assume a recorded running state
+means a worker still exists. Never treat a Pi conversation resume as proof of
+safe external-action replay.
+
+- Never-started tasks may be scheduled according to policy.
+- Recorded, unreviewed results return to the orchestrator.
+- Committed decisions must not be applied again.
+- Interrupted read-only attempts may resume or retry according to policy.
+- Attempts with uncertain external effects require reconciliation or approval.
+- Terminal runs missing a report have their report regenerated.
+
+Exactly-once execution is not promised. Use action-specific idempotency where
+available and conservative handling of uncertain effects. Whether recovery
+continues automatically or waits for operator approval remains open.
+
+Completed, failed, and cancelled runs move into `history/` only after workers
+stop and the terminal checkpoint is committed. Retain the JSON checkpoints,
+inputs, results, artifacts, and Pi JSONL alongside `report.html`; HTML is a
+human-readable view, not the sole historical record. Make report generation
+and archival restartable, using a same-volume directory rename and recovery
+logic that recognizes both active and archived terminal runs.
+
+Reports show the request, outcome, DAG, decisions, attempts, retries, failures,
+interruptions, artifacts, timing, and available usage information. Individual
+Pi HTML exports may supplement the overall report. Escape untrusted text and
+sanitize permitted markup; never execute generated agent HTML in the report.
+Prevent credentials from entering transcripts, artifacts, or exports. Private
+prompts and source content also require review before sharing or remote sync.
+
+Archived runs are immutable; continuing one creates a new run with a
+`parentRunId`. Test Pi path references when relocating sessions for archival.
+Retention, deletion, and backup policies remain to be specified.
+
 ## 7. Proposed logical architecture
 
 Keep the first implementation separable into these responsibilities. These are
@@ -142,8 +332,9 @@ logical boundaries, not a requirement to create all modules up front.
    context, applies ignore/exclusion rules, and identifies the workspace scope.
 5. **Tool and policy layer** — defines which tools are available, what they can
    access, and when user approval is required.
-6. **Run record/output layer** — records enough information to review a run and
-   locates its durable outputs. Persistence format and retention are undecided.
+6. **Run record/output layer** — owns the JSON workflow checkpoints, persistent
+   Pi session references, artifacts, and generated HTML history described in
+   sections 6.3–6.6. Retention remains undecided.
 
 ## 8. Initial interaction lifecycle (proposal)
 
@@ -154,8 +345,10 @@ A first workflow could follow this sequence:
    project context.
 3. refAInery constructs a run with a unique identifier and a clear output
    location.
-4. The Pi-backed agent performs the task using only the configured tools and
-   workspace permissions.
+4. A Pi-backed orchestrator plans a DAG of subagent tasks. The scheduler runs
+   eligible attempts using only configured tools and workspace permissions.
+   Every result returns to the orchestrator; accepted results unlock dependent
+   work, and committed decisions determine retries, new tasks, or completion.
 5. refAInery reports progress and requests approval before any action defined
    as approval-gated.
 6. The operator reviews the result, requested changes, and relevant run details.
@@ -232,8 +425,18 @@ These criteria are provisional until the first workflow is chosen:
   opaquely.
 - A user can run one agreed end-to-end workflow through Pi.
 - The run's progress and final status are understandable to the user.
-- Outputs are written only to an agreed persistent location and survive
-  container exit.
+- Storage is cloned inside the container into `/app/storage` on the named
+  volume on first use and reused on later launches, without a host checkout
+  bind mount or destructive synchronization.
+- JSON workflow checkpoints, Pi sessions, and artifacts survive container
+  removal without requiring Git commits or pushes.
+- Recovery tests cover interrupted checkpoint writes, result delivery,
+  orchestrator decisions, uncertain external effects, and archival. Recovery
+  must not silently repeat committed decisions or discard corrupt state.
+- Concurrent scheduler instances cannot acquire ownership of the same storage.
+- Downstream tasks wait for orchestrator acceptance of dependency results.
+- Terminal runs retain machine-readable records alongside regenerable HTML
+  reports; reports render agent and tool content as untrusted data.
 - The default tool permissions and any approval steps are documented and
   covered by tests.
 - A portable test/check command can run without Apple SDKs. The application is
@@ -273,11 +476,13 @@ These criteria are provisional until the first workflow is chosen:
 
 10. What command-line interface should the Python launcher expose, and should
     it run interactively by default?
-11. Which non-secret host directories, if any, should be mounted for Pi
-    configuration, cache, and run history? Credential files must not be
-    mounted as an alternate to the 1Password-at-launch rule.
-12. Where should durable run records and generated artifacts live, and how
-    should they be cleaned up?
+11. What additional non-secret configuration/cache mounts are needed beyond
+    the named storage volume? Credential files must not be mounted as an
+    alternate to the 1Password-at-launch rule.
+12. What retention, deletion, backup, and Git synchronization policies apply
+    to the agreed `/app/storage` layout? Should Git track active runs,
+    completed history only, or neither by default? Should crash recovery
+    proceed automatically or wait for operator approval?
 
 ### Permissions and providers
 
@@ -298,5 +503,9 @@ These criteria are provisional until the first workflow is chosen:
 | D-006 | Obtain all authentication through 1Password CLI at launch; no `.env` files or disk-written secrets | Hard rule |
 | D-007 | First user-facing interface | Open |
 | D-008 | First production workflow/output | Open |
-| D-009 | Run state and non-secret persistence strategy | Open |
+| D-009 | JSON workflow checkpoints, opaque Pi sessions, and HTML reports retaining underlying records | Confirmed; detailed schema and retention TBD |
 | D-010 | 1Password item/field names and mapping to container environment variables | Open |
+| D-011 | Clone storage inside the container on first use; reuse checkout on named volume at `/app/storage`, not a host checkout bind mount | Confirmed; launcher change pending |
+| D-012 | Orchestrator plans a DAG; scheduler runs subagents; all results return for orchestrator acceptance | Confirmed |
+| D-013 | One workflow-state writer, immutable checkpoints, conservative crash recovery | Confirmed; recovery automation policy TBD |
+| D-014 | Immutable archived runs; continuations create linked new runs | Confirmed |
