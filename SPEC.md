@@ -45,6 +45,10 @@ collaboration are called out explicitly.
 - Storage uses JSON workflow checkpoints, opaque Pi conversation files, and
   HTML historical reports. The storage repository is managed inside the
   container on a persistent named volume, not a host checkout bind mount.
+- A separate private `refAInery-config` repository defines agent types,
+  instructions, policies, workflow defaults, and approved Pi resources. Each
+  run uses an immutable snapshot of its resolved configuration, including
+  during recovery.
 
 ## 3. Product intent (working hypothesis)
 
@@ -181,6 +185,11 @@ storage.json
 active/
   <run-id>/
     request.json
+    configuration/
+      manifest.json
+      resolved.json
+      instructions/
+      resources/
     checkpoints/
       000001.json
       000002.json
@@ -210,9 +219,10 @@ runtime/
 
 `storage.json` records the storage-format version and storage identity, never
 credentials. `request.json` preserves the original prompt, submission time,
-approved context, and initial configuration. Orchestrator turns preserve the
-exact input presented and the structured decision returned. Task attempts
-preserve exact inputs, structured outcomes, and artifacts.
+approved context, and a reference to the immutable configuration snapshot
+specified in section 6.9. Orchestrator turns preserve the exact input presented
+and the structured decision returned. Task attempts preserve exact inputs,
+structured outcomes, and artifacts.
 
 Pi owns conversation persistence; refAInery owns workflow state. Keep Pi's JSONL
 session files opaque to the application storage schema and reference them by
@@ -233,7 +243,8 @@ Each checkpoint records:
 
 - Schema version, run ID, revision, and timestamps.
 - Run status, optional parent run, and final outcome when terminal.
-- Workflow/application version, model configuration, tool policy, and limits.
+- Workflow/application version, configuration snapshot identity, model
+  configuration, tool policy, and limits.
 - DAG revision, task definitions, and dependencies.
 - Attempt statuses, worker identities, timestamps, and Pi session references.
 - Result references and their delivery and acceptance states.
@@ -299,9 +310,9 @@ continues automatically or waits for operator approval remains open.
 
 Completed, failed, and cancelled runs move into `history/` only after workers
 stop and the terminal checkpoint is committed. Retain the JSON checkpoints,
-inputs, results, artifacts, and Pi JSONL alongside `report.html`; HTML is a
-human-readable view, not the sole historical record. Make report generation
-and archival restartable, using a same-volume directory rename and recovery
+inputs, results, configuration snapshots, artifacts, and Pi JSONL alongside
+`report.html`; HTML is a human-readable view, not the sole historical record.
+Make report generation and archival restartable, using a same-volume directory rename and recovery
 logic that recognizes both active and archived terminal runs.
 
 Reports show the request, outcome, DAG, decisions, attempts, retries, failures,
@@ -314,6 +325,151 @@ prompts and source content also require review before sharing or remote sync.
 Archived runs are immutable; continuing one creates a new run with a
 `parentRunId`. Test Pi path references when relocating sessions for archival.
 Retention, deletion, and backup policies remain to be specified.
+
+### 6.7 Container-managed configuration repository
+
+Separate reusable configuration from application code and run state:
+
+| Repository | Responsibility |
+| --- | --- |
+| `refAInery` | Application code, scheduler, persistence, validation, and policy enforcement |
+| `refAInery-config` | Agent definitions, instructions, policies, workflow defaults, and approved Pi resources |
+| `refAInery-storage` | Run state, frozen configuration, conversations, results, artifacts, and history |
+
+The private `refAInery-config` repository is cloned and managed inside the
+container at `/app/config`, backed by a separate named volume,
+`refainery-config`. Clone on first use, then validate and reuse the checkout,
+preserving local development edits. Apply the same initialization-safe ownership
+and incomplete-clone protections as storage. Do not automatically reset, clean,
+or pull on launch; configuration updates are explicit operator actions.
+Authentication remains launch-time and 1Password-sourced.
+
+Development edits can be made in the container-managed checkout. A host bind
+mount may later be offered as an explicit development-only alternative, but is
+not the default. Neither container removal nor routine cleanup may remove the
+configuration volume. Git synchronization and backup remain separate operations.
+
+Agents must not modify live configuration or their frozen run configuration.
+They may propose changes in an approved output area for operator review. Enforce
+this through application capabilities and appropriate filesystem/process
+boundaries, not instructions alone. Configuration activation is an operator
+responsibility, separate from normal agent work.
+
+### 6.8 Configuration layout and contract
+
+Use JSON for structured definitions and Markdown for instructions. The initial
+layout under `/app/config` is:
+
+```text
+README.md
+config.json
+agents/
+  orchestrator/
+    agent.json
+    instructions.md
+  researcher/
+    agent.json
+    instructions.md
+  implementer/
+    agent.json
+    instructions.md
+  reviewer/
+    agent.json
+    instructions.md
+instructions/
+  shared.md
+policies/
+  read-only.json
+  workspace-write.json
+workflows/
+  default.json
+pi/
+  extensions/
+  skills/
+  prompts/
+```
+
+Agent names above are illustrative, not a required first workflow. These files
+form refAInery's configuration contract; they are not assumed to be native Pi
+configuration. JSON schemas and validation code belong in the application
+repository, which owns the contract and its supported versions.
+
+`config.json` declares a schema version, default workflow and orchestrator type,
+scheduler concurrency, named model profiles, and explicitly approved extension
+registrations. Agent definitions declare stable IDs, descriptions, ordered
+instruction files, model profiles, requested policy/tool profiles, selected
+extensions and skills, execution limits, and expected result-schema references.
+Start with explicit definitions and shared instruction files, not inheritance.
+
+Workflow definitions select allowed agent types, defaults, and limits; the
+orchestrator's actual DAG belongs in persisted run state. Scheduling, checkpoint
+commits, result delivery, dependency acceptance, recovery, and approval
+mechanics remain application code, not configurable replacements for those
+mechanisms. Tasks may narrow, but never expand, approved agent permissions.
+Instruction text is not a substitute for capability enforcement.
+
+Before launching an orchestrator, validate supported schema versions, unique
+agent IDs, referenced instruction files, model/policy/extension references,
+execution limits, and result schemas. Reject unknown fields and paths that
+escape approved resources, including through symlinks. Report actionable
+validation errors without starting work with partial or implicit defaults.
+
+### 6.9 Immutable per-run configuration
+
+Configuration edits affect new runs only. Before dispatching any agent, resolve
+and validate the run's configuration, then durably save it under the run's
+`configuration/` directory and reference it from the initial checkpoint.
+
+- `manifest.json` records the configuration repository commit when available,
+  dirty-checkout status, content hashes, application and Pi versions, and
+  dependency versions or lockfile/bundle identity.
+- `resolved.json` records the effective non-secret configuration for the run,
+  including agent definitions, model profiles, tool policies, and limits.
+- `instructions/` retains the actual selected instruction content and order.
+- `resources/` retains selected extension/skill/prompt content and required
+  executable resources, or references a retained immutable resource bundle.
+
+A commit ID alone is insufficient: preserve the actual selected content,
+including uncommitted or untracked development files. Snapshotting must produce
+one consistent configuration; coordinate with edits or detect changes during
+capture and retry or fail. Avoid copying unrelated files or mutable credentials.
+Referenced bundles must remain available for recovery and archival, and may not
+be removed while retained runs depend on them.
+
+Recovery uses the saved configuration, never silently substitutes current
+`/app/config` contents, and never hot-reloads an active run. Verify snapshot
+integrity and runtime compatibility before resuming; missing resources or an
+incompatible application/Pi runtime produce an actionable recovery error. Keep
+snapshots with archived runs. New continuations receive a new snapshot and link
+to the parent run; they do not mutate its configuration.
+
+### 6.10 Explicit Pi resources and extension trust
+
+The Pi adapter translates resolved agent definitions into sessions, explicitly
+selecting resource loading, instructions and their order, settings, models, and
+tools. Verify the exact API against the pinned Pi dependency before implementing.
+Do not mount the configuration repository as Pi's entire home directory or
+silently inherit personal Pi settings, credentials, or arbitrary workspace
+resources. Any project instructions or resources must be explicitly approved
+and included in the resolved run configuration. Pi session files remain under
+`/app/storage`, not `/app/config`.
+
+Treat extensions as trusted executable code, not sandboxed configuration.
+Require explicit allowlists, pinned dependencies, and operator review before
+activating changed extension code. Agents may not automatically install or
+activate requested extensions. Tool allowlists alone do not constrain malicious
+extension code; execution isolation and credential exposure must be considered
+separately. Small private extensions may live in the configuration repository;
+substantial extensions need tests and dependency management and may become
+separately versioned packages. Dependency installation must be explicit rather
+than an unreviewed side effect of loading configuration.
+
+Neither the configuration checkout nor a run snapshot may contain `.env`
+files, API keys, tokens, OAuth bundles, or other credentials. Store only
+non-secret credential identifiers and resolve their values through launch-time
+1Password authentication. Do not persist resolved secret values when recording
+effective configuration. Private repository access is not a substitute for
+secret-handling rules or extension review.
 
 ## 7. Proposed logical architecture
 
@@ -334,7 +490,11 @@ logical boundaries, not a requirement to create all modules up front.
    access, and when user approval is required.
 6. **Run record/output layer** — owns the JSON workflow checkpoints, persistent
    Pi session references, artifacts, and generated HTML history described in
-   sections 6.3–6.6. Retention remains undecided.
+   sections 6.3–6.6, including per-run configuration snapshots. Retention remains
+   undecided.
+7. **Configuration layer** — validates and resolves the separate configuration
+   repository, freezes run-specific resources, and supplies explicit settings
+   to the Pi adapter without taking over scheduler or policy enforcement.
 
 ## 8. Initial interaction lifecycle (proposal)
 
@@ -344,7 +504,8 @@ A first workflow could follow this sequence:
 2. The operator selects or describes a task and explicitly chooses the allowed
    project context.
 3. refAInery constructs a run with a unique identifier and a clear output
-   location.
+   location, validates its configuration, and commits an immutable configuration
+   snapshot before dispatching work.
 4. A Pi-backed orchestrator plans a DAG of subagent tasks. The scheduler runs
    eligible attempts using only configured tools and workspace permissions.
    Every result returns to the orchestrator; accepted results unlock dependent
@@ -430,6 +591,18 @@ These criteria are provisional until the first workflow is chosen:
   bind mount or destructive synchronization.
 - JSON workflow checkpoints, Pi sessions, and artifacts survive container
   removal without requiring Git commits or pushes.
+- The private configuration repository is cloned inside the container at
+  `/app/config` on a separate named volume and reused without discarding edits.
+- Invalid configuration fails before agent dispatch. Tests cover unknown fields,
+  missing references, unsupported schemas, and resource path escapes.
+- Runs preserve actual resolved configuration and resources, including dirty
+  development edits. Changing live config does not change active or recovered
+  runs; missing resources or incompatible runtimes stop recovery explicitly.
+- Agents cannot modify live or frozen configuration or expand approved
+  permissions. Pi loads only explicitly approved resources, and extension
+  activation requires operator review.
+- Configuration and snapshots contain no credentials; secret values are never
+  persisted as part of configuration resolution.
 - Recovery tests cover interrupted checkpoint writes, result delivery,
   orchestrator decisions, uncertain external effects, and archival. Recovery
   must not silently repeat committed decisions or discard corrupt state.
@@ -460,24 +633,24 @@ These criteria are provisional until the first workflow is chosen:
    combination?
 5. What is one concrete end-to-end task that would make the first version
    valuable?
-6. Should workflows be written as code, declarative configuration, prompts, or
-   assembled interactively?
+6. Which initial workflow defaults, agent types, and result schemas should be
+   defined in the agreed JSON/Markdown configuration contract?
 
 ### Pi integration
 
 7. Which Pi package/API should be used, and should Pi be embedded as a library
    or invoked through a CLI/subprocess?
-8. Which Pi capabilities are needed initially (sessions, tools, extensions,
-   streaming, persistence, model/provider configuration)?
-9. Should users be able to use their existing Pi configuration and credentials,
-   or should refAInery own a separate configuration namespace?
+8. Which specific Pi tools, extensions, skills, streaming events, and model
+   profiles are needed for the initial workflow?
+9. What resource-loader and isolation implementation will enforce refAInery's
+   explicit configuration namespace, reviewed extensions, and credential rules?
 
 ### Container and data
 
 10. What command-line interface should the Python launcher expose, and should
     it run interactively by default?
-11. What additional non-secret configuration/cache mounts are needed beyond
-    the named storage volume? Credential files must not be mounted as an
+11. What additional non-secret cache mounts are needed beyond the named
+    configuration and storage volumes? Credential files must not be mounted as an
     alternate to the 1Password-at-launch rule.
 12. What retention, deletion, backup, and Git synchronization policies apply
     to the agreed `/app/storage` layout? Should Git track active runs,
@@ -509,3 +682,7 @@ These criteria are provisional until the first workflow is chosen:
 | D-012 | Orchestrator plans a DAG; scheduler runs subagents; all results return for orchestrator acceptance | Confirmed |
 | D-013 | One workflow-state writer, immutable checkpoints, conservative crash recovery | Confirmed; recovery automation policy TBD |
 | D-014 | Immutable archived runs; continuations create linked new runs | Confirmed |
+| D-015 | Private `refAInery-config` checkout at `/app/config` on a separate named volume; explicit updates preserve development edits | Confirmed; implementation pending |
+| D-016 | JSON agent/workflow/policy definitions and Markdown instructions; schemas and enforcement remain application-owned | Confirmed; detailed schema TBD |
+| D-017 | Immutable resolved configuration and resources per run; no active-run hot reload or recovery substitution | Confirmed |
+| D-018 | Explicit Pi resource loading, reviewed executable extensions, and no persisted credentials in config or snapshots | Confirmed |
