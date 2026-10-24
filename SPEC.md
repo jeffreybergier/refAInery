@@ -1,7 +1,7 @@
 # refAInery — AI Factory Specification
 
 **Status:** Draft 0.1 — starting point for collaborative design  
-**Last updated:** 2026-10-23
+**Last updated:** 2026-10-24
 
 ## 1. Purpose
 
@@ -45,6 +45,10 @@ collaboration are called out explicitly.
 - Storage uses JSON workflow checkpoints, opaque Pi conversation files, and
   HTML historical reports. The storage repository is managed inside the
   container on a persistent named volume, not a host checkout bind mount.
+- Durable per-inference usage records provide a per-model, per-machine token
+  odometer. Cloud-equivalent spend and purchase-price recovery are explicitly
+  estimated views, separate from measured usage. This accounting design is
+  agreed direction, not implemented telemetry.
 - A separate private `refAInery-config` repository defines agent types,
   instructions, policies, workflow defaults, and approved Pi resources. Each
   run uses an immutable snapshot of its resolved configuration, including
@@ -170,12 +174,15 @@ commit, and synchronization policies remain open; no automatic push is assumed.
 
 ### 6.4 Storage layout and ownership
 
-Distinguish three identities:
+Distinguish four identities:
 
 - **Run:** one user request and the orchestration performed to fulfill it.
 - **Task:** one logical node in the DAG.
 - **Attempt:** one execution of a task; retries create new attempts and retain
   earlier outcomes.
+- **Inference request:** one actual model invocation, including orchestrator
+  calls. An attempt or orchestrator turn may make many requests. An inference
+  retry gets a new request ID; duplicate notifications do not.
 
 Use stable identifiers and run-relative paths in refAInery records. The initial
 production layout under `/app/storage/prod` is (the repository root also
@@ -214,6 +221,23 @@ history/
   <year>/<month>/<run-id>/
     ...retained run data...
     report.html
+accounting/
+  machines/
+    <machine-id>/
+      000001.json
+  models/
+    <model-id>.json
+  pricing/
+    <price-snapshot-id>.json
+  comparisons/
+    <comparison-id>.json
+  usage/
+    <year>/<month>/<request-id>/
+      000001.started.json
+      000002.settled.json
+derived/
+  accounting/
+    ...rebuildable indexes and dashboard summaries...
 runtime/
   ...writer-lock metadata and temporary bookkeeping...
 ```
@@ -239,6 +263,9 @@ Use numbered, immutable JSON snapshots of complete workflow control state.
 The highest committed, valid revision is authoritative; older revisions retain
 transition history. Do not maintain independently authoritative queue, DAG,
 inbox, and task-status files. Indexes and UI caches must be rebuildable.
+Workflow checkpoints govern scheduling and result acceptance; the independent
+usage ledger in section 6.12 governs consumption. Neither substitutes for the
+other. Consumed tokens count even if a task fails or its result is rejected.
 
 Each checkpoint records:
 
@@ -325,7 +352,11 @@ prompts and source content also require review before sharing or remote sync.
 
 Archived runs are immutable; continuing one creates a new run with a
 `parentRunId`. Test Pi path references when relocating sessions for archival.
-Retention, deletion, and backup policies remain to be specified.
+Run retention, deletion, and backup policies remain to be specified. Minimal
+accounting records survive run archival and any future deletion of bulky run
+history; they reference stable identities rather than relocated run paths.
+Reconcile interrupted inference requests separately as described in section
+6.12; missing usage is not evidence that no inference occurred.
 
 ### 6.7 Container-managed configuration repository
 
@@ -506,7 +537,11 @@ fictional agents/workshop settings. Storage fixture version 2 uses
 `test/workshop.json` for operational telemetry and timed executions, and
 `test/transcripts/` for explicitly labeled sample HTML, not Pi exports.
 These are presentation fixtures, not production configuration schemas or
-scheduler checkpoints. They permit designing the UI and data relationships
+scheduler checkpoints. Future accounting fixtures must represent per-model and
+per-machine usage, known zero versus unknown counters, incomplete requests,
+unpriced usage, and explicitly estimated costs. This does not claim those
+fields exist in the current version-2 fixture contract.
+They permit designing the UI and data relationships
 before real orchestration. All simulated state is visibly labeled as test
 data; no real activity, completion, or approval is implied.
 
@@ -518,6 +553,13 @@ executions share a stage and stack vertically. Unstarted tasks are listed
 separately. Finished executions link to sample transcripts when available.
 Config-derived agent definitions live in an always-visible Factory Specification
 section at the bottom. Static introductory cards are no longer displayed.
+
+The target Factory Operations design leads with the recorded-since token
+odometer and per-model breakdown, then estimated economics, with current
+execution counts and token history as supporting views (section 6.12).
+Completed/failed execution counts measure outcomes, not independently verified
+quality or correctness. These target labels and accounting views are not yet
+implemented in the preview.
 
 Transcript endpoints are test-only, allow only referenced fixture files, and
 reject path escapes. Reports open separately under a script-free,
@@ -532,6 +574,148 @@ invalid edits clear stale telemetry and produce a visible error. This fixture
 reload behavior does not change the immutable
 per-run production configuration rule. No automatic reset or promotion from
 test into production is allowed. Neither area may contain credentials.
+
+### 6.12 Usage accounting and economic comparisons
+
+#### Authority and scope
+
+Persist measured consumption once, independently of workflow history; calculate
+financial interpretations separately. The harness is intended to be the sole
+connector to the local inference engine. All model calls, including orchestrator
+work, subagents, retries, and auxiliary calls, must pass through the accounting
+boundary. Verify that the pinned integration exposes every actual invocation,
+including internal retries; do not infer requests from task completion counts.
+Calls bypassing the harness are outside its accounting coverage.
+
+The authoritative accounting store consists of immutable, versioned JSON records
+under `accounting/`. It shares the storage volume's exclusive ownership and
+application-owned serialized writer. Agents do not write accounting records.
+It does not depend on parsing opaque Pi session files or on Git commits/pushes.
+File names above illustrate the contract; exact validated JSON schemas remain
+implementation work.
+
+#### Request records and normalization
+
+Allocate a globally unique request ID before dispatch. Each request records:
+
+- Schema version, request ID, revision, event type, and UTC timestamps.
+- Storage identity, run ID, and applicable task/attempt or orchestrator-turn IDs.
+  Auxiliary calls without a run record an explicit purpose instead.
+- Inference machine ID, model identity, engine identity/version, and adapter
+  version. The inference machine need not be the harness host. Model identity
+  distinguishes weights/revision and quantization when known; unknown metadata
+  stays explicit rather than implying a verified match.
+- Dispatch intent, terminal outcome when known, and any retry-parent request ID.
+- Normalized input/output, cached-input, and cache-write counts where available;
+  measurement source, finality, and completeness are separate from outcome.
+- Allowlisted original usage counters and their documented normalization
+  semantics, not full responses, prompts, headers, or credentials.
+
+Input tokens include cached input in the normalized schema. Display cached input
+as a subset, never add it to input again. Preserve cache writes separately and
+record their relationship to input according to the adapter's semantics. Do not
+invent a universal cache-write billing rule. Output normalization must document
+any inclusion of reasoning or other output subcategories without double counting.
+Use nonnegative integer counters: `null` means unavailable/unknown, while zero
+means known zero. Estimates, if supported, must be labeled and distinguishable
+from engine-reported measurements; text length is not authoritative token usage.
+Validate supported engine counters before promising a dashboard metric.
+
+#### Durable lifecycle and reconciliation
+
+1. Durably write a `started` record before sending the inference request. This
+   records intent, not proof that the engine received or executed it. If this
+   write fails, do not dispatch.
+2. Invoke the engine with that request identity where supported.
+3. Durably append a settled record containing the outcome and available usage,
+   then publish updated dashboard aggregates. A failure or cancellation can
+   still consume tokens and can still have complete usage.
+4. If usage arrives late or is corrected, append a revision that explicitly
+   supersedes the preceding accounting state; never rewrite earlier records.
+
+Each revision contains the full accounting state for its request. Aggregation
+uses only the latest valid revision per request, not the sum of revision files.
+Stable notification identities or equivalent adapter deduplication prevent
+replayed callbacks from increasing totals. A genuinely repeated inference call
+is a new request even when its prompt is identical. The request's directory is
+assigned at creation and remains stable for late revisions across month changes.
+
+Use temporary sibling writes, flush, rename, and directory flush as in section
+6.5. Ignore unfinished temporary files; corrupt committed records or broken
+revision chains require explicit recovery, not silent rollback. Stop new
+inference dispatch on accounting persistence failure and expose degraded status;
+already-running requests may still consume tokens and require reconciliation.
+
+A crash between dispatch and usage persistence leaves uncertain consumption.
+Reconcile against engine request records where supported; otherwise preserve an
+unresolved/incomplete request. Do not invent zero usage or automatically replay
+inference to repair accounting. Workflow recovery separately decides whether
+work can be retried. Exactly-once inference and gap-free accounting are not
+promised without engine reconciliation support. Request finality does not imply
+all counters were reported, and partial observations must not be labeled exact
+final totals.
+
+#### Models, machines, prices, and comparison policies
+
+Model records retain non-secret identity metadata. Machine records use immutable
+revisions containing purchase price, currency, accounting start date, and any
+operating-cost assumptions with their effective periods. Keep inference-machine
+identity stable across model changes and harness restarts. New machines get new
+identities. Do not silently attribute pre-metering usage or shared-machine costs.
+
+Pricing snapshots retain cloud service (for example OpenRouter), exact model and
+provider identity, currency, rate units and exact decimal rates, cache billing
+categories, capture time, source reference, and applicable pricing conditions.
+Retain effective dates when known; capture time alone does not establish a
+historical rate. Never overwrite a referenced snapshot. Monetary calculation
+uses decimal/fixed-point arithmetic with an explicit rounding policy.
+
+Immutable comparison policies map local model identities to cloud model/provider
+identities and price snapshots. They record the calculation version and cache
+assumptions. Capture the applicable comparison-policy ID in request accounting
+state for reproducible historical estimates, or explicitly record no policy.
+An uncached baseline and a cache-adjusted scenario are separate estimates: a
+local cache hit is not proof of a cloud cache hit. Non-identical model variants
+are benchmark comparisons, not claims of equivalent quality or output.
+
+Missing rates, mappings, or required usage produce unpriced/incompletely priced
+coverage, not a zero-dollar valuation. Report priced totals with that coverage.
+Historical-rate estimates use the retained policy; repricing at newer rates is
+an explicitly separate view and never mutates measured usage or old snapshots.
+Different currencies require a retained conversion source/rate/date and policy,
+or separate totals; never silently add them together.
+
+#### Odometer, economics, and retention
+
+The primary dashboard shows input, output, cached-input availability, per-model
+and per-machine breakdowns, and the date recording began. Report known totals
+alongside unresolved requests, partial usage, and unavailable counter coverage.
+Retain interval histories as derived views, not independent lifetime counters.
+
+Label financial views **Estimated cloud-equivalent spend** and **Estimated
+purchase-price recovery**, not measured savings. The comparison is hypothetical
+unless the operator would otherwise have purchased that workload. Compute:
+
+```text
+estimated net avoided spend = cloud-equivalent estimate - local operating costs
+remaining purchase price = purchase price - estimated net avoided spend
+```
+
+If operating costs are omitted, label the view **Gross purchase-price offset —
+excluding operating costs**. Show the selected machine cost, pricing policy/date,
+cache assumptions, and any incomplete/unpriced coverage. Do not imply measured
+electricity use from inference duration or token counts alone. A negative
+remaining balance means the estimate exceeds the purchase price, not a negative
+purchase price. Do not promise a payoff date without a separate forecast model.
+
+All daily, per-model, per-machine, lifetime, and economic summaries under
+`derived/accounting/` are rebuildable caches. They are never authoritative
+mutable odometer counters. A future database may index the ledger without
+replacing this authority contract. The accounting ledger and referenced model,
+machine, price, and policy records survive run archival/deletion. Minimal
+records contain no prompt or response content. Ledger compaction requires a
+separate auditable design preserving totals, coverage, and provenance; deleting
+ledger records while retaining only dashboard totals is not supported.
 
 ## 7. Proposed logical architecture
 
@@ -557,6 +741,10 @@ logical boundaries, not a requirement to create all modules up front.
 7. **Configuration layer** — validates and resolves the separate configuration
    repository, freezes run-specific resources, and supplies explicit settings
    to the Pi adapter without taking over scheduler or policy enforcement.
+8. **Usage accounting layer** — records every inference invocation and available
+   engine usage, normalizes counters, reconciles incomplete records, and derives
+   odometer and explicitly estimated economic views. It owns accounting schemas
+   and pricing provenance, not workflow acceptance or scheduling decisions.
 
 ## 8. Initial interaction lifecycle (proposal)
 
@@ -669,6 +857,19 @@ These criteria are provisional until the first workflow is chosen:
   orchestrator decisions, uncertain external effects, and archival. Recovery
   must not silently repeat committed decisions or discard corrupt state.
 - Concurrent scheduler instances cannot acquire ownership of the same storage.
+- Accounting tests cover multiple calls per attempt, orchestrator/auxiliary
+  calls, retries, failed/cancelled consumption, duplicate notifications, late
+  corrections, unknown versus zero counters, and cache-subset normalization.
+- Forced-interruption tests cover pre-dispatch and post-dispatch accounting
+  writes, incomplete usage, corrupt records, and persistence failures. Recovery
+  never silently converts missing usage to zero or replays inference to repair
+  the ledger. Integration tests verify invocation coverage and supported counters
+  against the pinned engine/adapter; unavailable coverage remains explicit.
+- Rebuilding accounting summaries reproduces totals without double counting
+  revisions. Archival or deletion of bulky run history does not reset usage.
+- Economic tests cover historical versus current repricing, absent mappings or
+  rates, cache assumptions, decimal rounding, currency handling, and excluded
+  operating costs. Estimates and incomplete coverage are visible in the UI.
 - Downstream tasks wait for orchestrator acceptance of dependency results.
 - Terminal runs retain machine-readable records alongside regenerable HTML
   reports; reports render agent and tool content as untrusted data.
@@ -721,7 +922,9 @@ These criteria are provisional until the first workflow is chosen:
 
 ### Permissions and providers
 
-13. Which model providers are in scope for the initial slice?
+13. Which local engine/version and cloud comparison providers are in scope for
+    the initial slice? Which usage counters, internal retries, and request
+    reconciliation capabilities can the pinned integration actually expose?
 14. Should network access be unrestricted, provider-only, or disabled unless
     explicitly enabled?
 15. Which file operations and other tools may run without approval, if any?
@@ -749,3 +952,5 @@ These criteria are provisional until the first workflow is chosen:
 | D-017 | Immutable resolved configuration and resources per run; no active-run hot reload or recovery substitution | Confirmed |
 | D-018 | Explicit Pi resource loading, reviewed executable extensions, and no persisted credentials in config or snapshots | Confirmed |
 | D-019 | Root-level prod/test namespaces in configuration and storage repositories; credential-free local test launcher with read-only fictional fixtures | Confirmed; initial preview implemented |
+| D-020 | Independent immutable per-inference accounting ledger; per-model/per-machine odometer with explicit unknown usage; summaries are rebuildable | Confirmed; implementation pending |
+| D-021 | Versioned pricing and comparison policies; cloud-equivalent spend and purchase-price recovery are estimates separate from measured usage | Confirmed; implementation pending |
