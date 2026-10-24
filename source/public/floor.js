@@ -132,9 +132,10 @@ export function mountFloor(preview, container, taskCard) {
     follow.setAttribute("aria-pressed", "false");
     viewport.scrollBy({ left: -Math.max(200, viewport.clientWidth / 2) });
   }), follow, zoomOut, zoomLabel, zoomIn,
-  node("span", "floor-legend", "● Start · ■ End · × Failed · ▶ Running · O Orchestrator / S Subagent"));
+  node("span", "floor-legend", "● Start · ■ End · × Failed · ▶ Running · O Orchestrator / S Subagent"),
+  node("span", "floor-legend floor-selection-key", "Selected"));
   const note = node("p", "floor-note small text-body-secondary m-0 p-2",
-    `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Up to 3 parallel subrows per job; select a job for all tasks.`);
+    `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Status text/markers: green = succeeded, amber = running or awaiting review, red = failed, gray = cancelled. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
   panel.append(inspector, controls, viewport, note);
   container.append(panel);
   function resize() {

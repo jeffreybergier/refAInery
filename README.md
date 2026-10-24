@@ -16,7 +16,10 @@ before Pi or real orchestration is connected.
    job and a fixed-height detail inspector above it. Select a bar or endpoint
    for agent/orchestrator details, timing, status, and available sample transcript.
    Start/end markers and proportional bar lengths show execution lifetimes,
-   not CPU activity. Overlapping executions use up to three thin subrows per
+   not CPU activity. Unselected bars have a uniform opaque neutral fill and
+   single border; status is shown by text/marker color, and O/S labels identify
+   orchestrators/subagents. The selected bar has a light-blue fill and ring
+   that persist independently of mouse or keyboard focus. Overlapping executions use up to three thin subrows per
    job, independent of stage numbers. Job labels show overflow and pending counts;
    select a job to access every task, including overflow and unstarted tasks.
    The timeline scrolls internally without growing the page as jobs arrive.
@@ -152,6 +155,7 @@ PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-floo
 ```
 
 It uses temporary fixtures and a loopback server to check keyboard selection,
+computed bar fills/borders and persistent selection after mouse clicks or blur,
 parallel overflow/pending access, zoom/follow, refresh preservation, fixed height,
 mobile page width, and empty/error states. It never changes sibling fixtures.
 

@@ -93,16 +93,17 @@ h1 { letter-spacing: -.045em; }
 .floor-tick { position: absolute; top: 10px; font: 11px monospace; white-space: nowrap; padding-left: 4px; border-left: 1px solid #8e8175; }
 .floor-tick:last-child { transform: translateX(-100%); padding-right: 4px; }
 .floor-snapshot-line { position: absolute; right: 0; top: 0; bottom: 0; border-right: 2px dashed var(--furnace); }
-.floor-bar { position: absolute; height: 24px; min-width: 12px; padding: 0 12px; border: 1px solid currentColor; border-radius: 4px; background: #29332e; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; text-align: left; }
+/* Scope above the shared status badges: every unselected bar has the same
+   opaque fill and single border. Status uses text/marker color, not fill. */
+.floor-lane .floor-bar { position: absolute; height: 24px; min-width: 12px; padding: 0 12px; border: 1px solid currentColor; border-radius: 4px; background: #292c30; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; text-align: left; }
 .floor-bar::before, .floor-bar::after { position: absolute; top: 0; bottom: 0; background: inherit; }
 .floor-bar::before { content: "●"; left: 0; }
 .floor-bar::after { content: attr(data-end); right: 0; }
-.floor-bar.status-running { background: #51361f; border-right: 3px dotted; }
-.floor-bar.status-failed { background: #472d2a; }
-.floor-bar.status-awaiting-review { background: #413a26; }
-.floor-bar.kind-orchestrator { border-top: 3px double; }
-.floor-bar[aria-pressed="true"] { outline: 2px solid white; outline-offset: 1px; z-index: 1; }
-.floor-bar:focus-visible { z-index: 3; outline: 3px solid #ffb57e; }
+/* Selection must survive Bootstrap's mouse-focus outline reset. Keep it
+   independent from keyboard focus, which retains its own amber outline. */
+.floor-lane .floor-bar[aria-pressed="true"] { background: #c8e5ff; color: #102332; border-color: #c8e5ff; box-shadow: 0 0 0 2px #c8e5ff; font-weight: 700; z-index: 1; }
+.floor-lane .floor-bar:focus-visible { z-index: 3; outline: 3px solid #ffb57e; outline-offset: 4px; }
+.floor-selection-key { display: inline-block; padding: 0 .3rem; background: #c8e5ff; color: #102332; border-radius: 3px; font-weight: 700; }
 .floor-no-executions { padding: 1rem; font-size: .75rem; color: #b0aaa3; }
 .floor-execution-list { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; padding: 0; }
 .floor-note { border-top: 1px solid #514943; font-size: .7rem; }
