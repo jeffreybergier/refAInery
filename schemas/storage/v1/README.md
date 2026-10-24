@@ -40,3 +40,9 @@ Related agreed design in `SPEC.md` (not additional implemented schemas):
   an exact handover trigger. Each subagent assignment records its selected model.
 
 These fields belong in future run/configuration/attempt records, not requests.
+
+The `/v1` dashboard now previews this **full agreed workflow**, using separate
+provisional fixtures documented in `source/fixtures/README.md`. Its restored
+execution timeline uses explicitly recorded fixture observations, not inferred
+checkpoint-save times. The fixture shapes do not finalize the production
+checkpoint/configuration/assignment schemas, and do not add fields to requests.

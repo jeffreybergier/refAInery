@@ -1,6 +1,6 @@
 import { createAppServer } from "./server.ts";
 import { loadPreview } from "./preview.ts";
-import { loadIntakePreview } from "./intake-preview.ts";
+import { loadWorkflowPreview } from "./workflow-preview.ts";
 import type { PreviewDirectories } from "./preview.ts";
 
 async function main() {
@@ -21,7 +21,7 @@ async function main() {
     };
     // Fail closed before listening, rather than falling back to production data.
     await loadPreview(preview);
-    await loadIntakePreview();
+    await loadWorkflowPreview();
   }
   const host = process.env.REFAINERY_HOST ?? (mode === "test" ? "127.0.0.1" : "0.0.0.0");
   const port = Number(process.env.REFAINERY_PORT ?? 8080);
@@ -37,6 +37,6 @@ async function main() {
 }
 
 main().catch(() => {
-  console.error("Startup failed. Check Node.js 22.18+, mode, port, bundled intake fixtures, config fixture v1, storage fixture v2, and referenced test transcripts. No production fallback was attempted.");
+  console.error("Startup failed. Check Node.js 22.18+, mode, port, bundled v1 request/workflow fixtures and documents, config fixture v1, storage fixture v2, and referenced test transcripts. No production fallback was attempted.");
   process.exitCode = 1;
 });

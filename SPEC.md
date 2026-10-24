@@ -11,25 +11,53 @@ refAInery is a Node.js/TypeScript application with a dark Bootstrap dashboard.
 It currently displays fictional, read-only fixtures, not real agent activity.
 Pi integration and production orchestration are not implemented.
 
-`/` redirects to `/v1`. `/v1` displays storage-v1 request intake; `/v2`
+`/` redirects to `/v1`. `/v1` presents the full agreed workflow below; `/v2`
 preserves the original execution-oriented test dashboard. Both remain read-only.
 
-### Storage-v1 dashboard
+### V1 workflow dashboard
 
-The v1 page shows request identity, original prompt (including whitespace), UTC
-receipt time, manual source, schema version, and count of records in the fixture
-collection. Receipt sorting is only for browsing, not a dispatch queue. No queue
-membership, run identity, execution status, or outcome is inferred from intake.
+V1 retains the shared wall-clock timeline, selection, keyboard navigation,
+zoom/history controls, and fixed-height inspector. Its fictional work follows
+one active run and one subagent at a time, with orchestrator planning/review
+turns between assignments. Pending tasks are inspected without execution bars;
+queued requests remain outside the execution timeline.
 
-Factory state, active/queued/finished/failed counts, subagent outcomes, token
-history, execution timeline/inspector, and agent/model configuration remain
-explicit unavailable placeholders. Missing data is not zero, idle, or success.
+The page displays request intake, separate FIFO queue membership, run status and
+phase, latest-checkpoint-derived metrics, attempt history and interruption/retry
+reasons, separate execution/review outcomes, applied orchestrator decisions,
+Markdown plans/handovers, session identities, export references, and frozen model
+configuration. The outcome ring measures accepted/rejected attempt handovers,
+not correctness or original-request completion. An accepted context-limit
+handover is still partial progress. The orchestrator's shared export is linked
+only after run end, never generated for individual turns.
 
-Test mode loads the bundled `source/fixtures/requests-v1.json` array through
-`/api/v1/preview`; every element is a schema-compliant request. The array is a
-presentation container, not a new production storage layout. Fixture validation
-runs on refresh and test startup. Failed refreshes clear stale requests. Production
-mode does not load these fixtures and has no production intake reader or writer.
+The finalized request records remain in `source/fixtures/requests-v1.json`.
+Separate `source/fixtures/workflow-v1.json` records model the agreed queue,
+configuration, run, checkpoint, task, attempt, and review concepts. The exact
+record shapes, observed execution/turn times, review times, checkpoint times,
+display labels, and export-state encoding are **provisional fixture conventions**,
+not finalized production schemas. Checkpoint-save times are never substituted
+for execution times. Every illustrated snapshot is complete, but the fixture
+shows selected milestones rather than an exhaustive production transition log.
+See `source/fixtures/README.md` for the precise preview contract.
+
+The latest validated snapshot drives each run; repeated attempts in earlier
+snapshots are not double-counted. The inspector exposes earlier snapshots.
+Run-relative sample Markdown, HTML, and labeled session placeholders live under
+`source/fixtures/workflow-v1/`; none are real Pi files or exports. Referenced
+Markdown/HTML can be served in test mode; sessions are not served. HTML remains
+script-free and sandboxed; Markdown is rendered as text.
+
+Only genuinely undefined data remains unavailable: token history/usage, live
+activity/heartbeat, factory stop/idle control, general output-artifact inventory,
+and tool policy. Configured context capacity is not measured usage.
+
+`/api/v1/preview` validates bundled requests, all workflow snapshots, frozen
+configuration, sequential execution, handback/review boundaries, FIFO linkage,
+and referenced files at refresh and test startup. Invalid data or missing files
+clear stale displays; there is no rollback to an earlier checkpoint. This is
+fixture validation, not production persistence, orchestration, or recovery.
+Production mode loads neither set of fixtures.
 
 ### Preserved v2 dashboard
 
@@ -71,7 +99,8 @@ The v2 fixture format is a presentation contract, **not the production storage
 schema**. Its validation lives in `source/preview.ts` and its tests. Its fictional
 parallel work and per-turn transcript examples are preserved for design reference,
 not claims of compliance with the sequential production workflow below. V1 intake
-fixture validation lives separately in `source/intake-preview.ts`.
+request fixture validation lives in `source/intake-preview.ts`; provisional
+workflow validation and document loading live in `source/workflow-preview.ts`.
 
 ### Running and checking
 

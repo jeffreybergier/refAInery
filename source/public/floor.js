@@ -46,7 +46,7 @@ const identity = (task) => task.details?.attemptNumber ? ` · Attempt ${task.det
   task.details?.turnId ? ` · Turn ${task.details.turnId}` : "";
 const timestamp = (time) => new Date(time).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
-export function mountFloor(preview, container, taskCard) {
+export function mountFloor(preview, container, taskCard, options = {}) {
   disposeFloor();
   container.replaceChildren();
   if (!preview.runs.length) return;
@@ -105,6 +105,7 @@ export function mountFloor(preview, container, taskCard) {
       inspector.append(list);
       if (!run.tasks.length) inspector.append(node("p", "small", "No tasks in this job."));
     }
+    if (options.runDetails) inspector.append(options.runDetails(run, task));
     inspector.scrollTop = 0;
   }
   function selectable(text, run, task, className) {
@@ -162,7 +163,7 @@ export function mountFloor(preview, container, taskCard) {
   node("span", "floor-legend", "▶ Running · ✓ Finished · × Failed · ◇ Awaiting review · — Cancelled · ! Interrupted · O Orchestrator turn / S Subagent attempt"),
   node("span", "floor-legend floor-selection-key", "Selected"));
   const note = node("p", "floor-note small text-body-secondary m-0 p-2",
-    `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Finished is not verified success or result acceptance. Review time does not extend execution bars. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
+    options.note ?? `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Finished is not verified success or result acceptance. Review time does not extend execution bars. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
   panel.append(inspector, controls, viewport, note);
   container.append(panel);
   function resize() {

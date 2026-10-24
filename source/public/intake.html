@@ -5,69 +5,77 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#101112">
-    <title>refAInery — Storage v1 intake</title>
+    <title>refAInery — V1 workflow</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/assets/bootstrap.min.css">
     <link rel="stylesheet" href="/assets/refainery.css">
+    <script src="/assets/bootstrap.bundle.min.js" defer></script>
     <script src="/assets/intake.js" type="module"></script>
   </head>
-  <body>
+  <body data-dashboard="v1">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
-      <nav class="container-xl py-3 d-flex flex-wrap align-items-center gap-3" aria-label="Main navigation">
-        <a class="navbar-brand d-flex align-items-center gap-3" href="/v1" aria-label="refAInery home">
-          <span class="brand-mark" aria-hidden="true">r/</span>
-          <span class="wordmark">ref<span>AI</span>nery</span>
+      <nav class="navbar navbar-expand-md container-xl py-3" aria-label="Main navigation">
+        <a class="navbar-brand d-flex align-items-center gap-3" href="/v1" aria-label="refAInery V1 home">
+          <span class="brand-mark" aria-hidden="true">r/</span><span class="wordmark">ref<span>AI</span>nery</span>
         </a>
-        <a class="nav-link" href="#requests">Requests</a>
-        <a class="nav-link" href="#factory-floor">Factory floor</a>
-        <a class="nav-link" href="/v2">V2 design preview ↗</a>
-        <span class="environment-label ms-md-auto">Storage v1 · Intake only</span>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navigation" aria-controls="navigation" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="navigation">
+          <ul class="navbar-nav ms-md-4 gap-md-2">
+            <li class="nav-item"><a class="nav-link" href="#operations">Operations</a></li>
+            <li class="nav-item"><a class="nav-link" href="#factory-floor">Factory floor</a></li>
+            <li class="nav-item"><a class="nav-link" href="#requests">Requests</a></li>
+            <li class="nav-item"><a class="nav-link" href="#configuration">Specification</a></li>
+            <li class="nav-item"><a class="nav-link" href="/v2">V2 preview</a></li>
+          </ul>
+          <span class="environment-label ms-md-auto">V1 workflow</span>
+        </div>
       </nav>
     </header>
     <main id="main" class="container-xl py-4 py-md-5">
-      <p id="test-notice" class="test-notice mb-4" hidden><strong>TEST INTAKE</strong> / Frozen, fictional requests. No agents or real work are running.</p>
+      <p id="test-notice" class="test-notice mb-4" hidden><strong>TEST FACTORY</strong> / Frozen, fictional v1 workflow. No agents or real work are running.</p>
+      <p class="small text-body-secondary">Based on the full v1 workflow in SPEC.md. Request records use the finalized schema; checkpoint fields and observed execution timestamps are provisional preview records, not finalized production schemas.</p>
       <p id="preview-error" class="alert alert-danger" role="alert" hidden></p>
-      <noscript><p class="alert alert-warning">JavaScript is required to load request fixtures.</p></noscript>
+      <noscript><p class="alert alert-warning">JavaScript is required to display workflow fixtures and execution timelines.</p></noscript>
       <section id="operations" aria-labelledby="operations-title">
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-          <div><p class="eyebrow accent mb-2">Control room / Storage v1</p><h1 id="operations-title" class="display-6 fw-semibold mb-0">Factory Operations</h1></div>
-          <button id="refresh-preview" class="btn btn-outline-light btn-sm" type="button" hidden>Refresh fixtures</button>
+          <div><p class="eyebrow accent mb-2">Control room / Sequential workflow</p><h1 id="operations-title" class="display-6 fw-semibold mb-0">Factory Operations</h1></div>
+          <div class="text-md-end"><p id="snapshot-time" class="small text-body-secondary mb-2">Workflow not connected</p><button id="refresh-preview" class="btn btn-outline-light btn-sm" type="button" hidden>Refresh fixtures</button></div>
         </div>
-        <p class="text-body-secondary">V1 records receipt of a request, not what happened afterward. Unknown is not zero, idle, or queued.</p>
-        <div class="row g-3 mb-4">
-          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Requests in this collection</h2><p id="request-count" class="metric-value">—</p><p class="small text-body-secondary mb-0">Intake records only · not queue depth</p></article></div>
-          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Factory state / Active agents</h2><p class="h4">Unavailable</p><p class="small text-body-secondary mb-0">Requires factory control state and execution observations.</p></article></div>
-          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Queued / Finished / Failed</h2><p class="h4">Unavailable</p><p class="small text-body-secondary mb-0">Requires queue membership and run/attempt outcomes.</p></article></div>
+        <p id="operations-empty" class="panel p-4 text-body-secondary">Production workflow loading is not implemented. Test mode supplies fictional v1 checkpoints.</p>
+        <div id="workflow-data" hidden>
+          <div id="operation-stats" class="row g-3 mb-4" aria-label="Workflow statistics"></div>
+          <div class="row g-3">
+            <div class="col-lg-4"><article class="panel p-4 h-100"><p class="eyebrow mb-2">Orchestrator review</p><h2 class="h5">Subagent outcomes</h2><div id="outcome-chart"></div><p id="outcome-note" class="small text-body-secondary mb-0"></p></article></div>
+            <div class="col-lg-8"><article class="panel p-4 h-100"><p class="eyebrow mb-2">Resource consumption</p><h2 class="h5">Tokens over time</h2><p class="chart-empty">Unavailable: v1 does not define token observations or interval samples.</p><p class="small text-body-secondary mb-0">Live activity, last-observation timestamps, worker health, factory stop/idle controls, and tool-policy telemetry are also undefined. A 250,000-token configured context capacity is not measured usage or a verified handover threshold.</p></article></div>
+          </div>
         </div>
-        <div class="row g-3">
-          <div class="col-lg-4"><article class="panel p-4 h-100"><h2 class="h5">Subagent outcomes</h2><p class="text-body-secondary mb-0">Unavailable in storage v1. Execution completion and result acceptance need separate records; no success rate can be calculated.</p></article></div>
-          <div class="col-lg-8"><article class="panel p-4 h-100"><h2 class="h5">Tokens over time</h2><p class="text-body-secondary mb-0">Unavailable in storage v1. Requires timestamped input/output usage and coverage information. Context capacity is not token usage.</p></article></div>
-        </div>
-      </section>
-      <section id="requests" class="pt-5" aria-labelledby="requests-title">
-        <h2 id="requests-title" class="h3">Request intake</h2>
-        <p class="text-body-secondary">Original prompts and UTC receipt times. Listed oldest receipt first for browsing, not as a dispatch queue. Requests have no execution status.</p>
-        <p id="requests-state" class="panel p-4 text-body-secondary" role="status">Production intake loading is not implemented. Test mode supplies fictional v1 requests.</p>
-        <div id="request-list" class="d-grid gap-3"></div>
       </section>
       <section id="factory-floor" class="pt-5" aria-labelledby="floor-title">
-        <h2 id="floor-title" class="h3">Factory Floor</h2>
-        <div class="panel p-4">
-          <h3 class="h5">Execution timeline unavailable</h3>
-          <p class="text-body-secondary">Receipt times are not execution start times. Runs, orchestrator turns, subagent attempts, and execution start/end times are not defined by the request schema.</p>
-          <h3 class="h5">Execution inspector unavailable</h3>
-          <p class="text-body-secondary mb-0">Attempt/retry history, review decisions and timing, model/provider, activity and last observation, usage, result summaries, artifacts, Pi sessions, transcripts, configuration snapshots, and tool policy require additional records. No handovers or exports exist for these fictional requests.</p>
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-4">
+          <div><p class="eyebrow mb-2">Execution history → Handback → Review</p><h2 id="floor-title" class="h3 mb-0">Factory Floor</h2></div>
+          <p class="small text-body-secondary mb-0">Shared UTC timeline · One run and one subagent at a time</p>
         </div>
+        <p id="floor-empty" class="panel p-4 text-body-secondary">No workflow history is connected.</p>
+        <div id="floor-runs" class="d-grid gap-4"></div>
+      </section>
+      <section id="requests" class="pt-5" aria-labelledby="requests-title">
+        <h2 id="requests-title" class="h3">Request intake &amp; FIFO queue</h2>
+        <p class="text-body-secondary"><span id="request-count">—</span> intake records · not queue depth. Queue membership comes from the separate workflow fixture, never from receipt alone.</p>
+        <p id="queue-state" class="panel p-3 text-body-secondary">Request queue not connected.</p>
+        <p id="requests-state" class="panel p-4 text-body-secondary" role="status">Production intake loading is not implemented.</p>
+        <div id="request-list" class="d-grid gap-3"></div>
       </section>
       <section id="configuration" class="pt-5" aria-labelledby="configuration-title">
         <div class="panel p-4">
           <h2 id="configuration-title" class="specification-heading">Factory Specification</h2>
-          <p>Storage v1 request fields: <code>schemaVersion</code>, <code>id</code>, <code>prompt</code>, <code>receivedAt</code>, <code>source</code>.</p>
-          <p class="text-body-secondary mb-0">Agent definitions and allowed model/provider configuration are outside this schema. No production configuration is loaded. The preserved V2 preview uses its own separate fictional configuration.</p>
+          <p class="text-body-secondary">One orchestrator owns the plan and all assignments. Subagents cannot delegate. Each run freezes its allowed models and orchestrator choice; placeholders below are not real provider capabilities.</p>
+          <div id="configuration-models" class="row g-3"></div>
+          <p id="configuration-empty" class="text-body-secondary">No frozen run configurations loaded.</p>
+          <p class="small text-body-secondary mt-3 mb-0">Intake records remain immutable: schemaVersion, id, prompt, receivedAt, source. Workflow records are separate. Plans and handovers are Markdown; session files and HTML exports are separate references. No production orchestration or persistence is implemented.</p>
         </div>
       </section>
-      <footer class="page-footer d-flex flex-wrap justify-content-between gap-2 mt-5 pt-4"><span>refAInery / Storage v1</span><a href="/v2">Preserved V2 dashboard</a></footer>
+      <footer class="page-footer d-flex flex-wrap justify-content-between gap-2 mt-5 pt-4"><span>refAInery / V1 workflow preview</span><a href="/v2">Preserved V2 dashboard</a></footer>
     </main>
   </body>
 </html>

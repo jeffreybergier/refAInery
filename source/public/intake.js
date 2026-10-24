@@ -1,70 +1,216 @@
+import { mountFloor, disposeFloor } from "./floor.js";
+import { taskCard } from "./preview.js";
+import { workflowPresentation } from "./workflow.js";
+
 export function orderedRequests(requests) {
   return requests.slice().sort((a, b) =>
     Date.parse(a.receivedAt) - Date.parse(b.receivedAt) || a.id.localeCompare(b.id));
 }
-
 function element(tag, className, text) {
   const node = document.createElement(tag);
   node.className = className;
-  node.textContent = text;
+  if (text !== undefined) node.textContent = text;
   return node;
 }
+function disclosure(title, content) {
+  const details = element("details", "small my-3");
+  details.append(element("summary", "", title),
+    element("pre", "request-prompt text-break mt-2", content));
+  return details;
+}
+const utc = (value) => value.replace("T", " ").replace("Z", " UTC");
 
-export function renderRequests(requests, container) {
+export function renderRequests(requests, container, preview = null) {
   container.replaceChildren();
   for (const request of orderedRequests(requests)) {
-    const card = element("article", "panel p-4", "");
+    const card = element("article", "panel p-4");
     card.append(element("h3", "h6 text-break", request.id),
       element("p", "small text-body-secondary", `Schema ${request.schemaVersion} · Source: ${request.source}`));
     const receipt = element("p", "small", "Received: ");
-    const time = element("time", "", request.receivedAt.replace("T", " ").replace("Z", " UTC"));
+    const time = element("time", "", utc(request.receivedAt));
     time.dateTime = request.receivedAt;
     receipt.append(time);
-    card.append(receipt, element("p", "eyebrow", "Original prompt"),
+    const position = preview?.queue.indexOf(request.id) ?? -1;
+    const run = preview?.runs.find((run) => run.requestId === request.id);
+    const state = position >= 0 ? `FIFO queue position ${position + 1} · Not started` :
+      run ? `Run ${run.id} · ${run.checkpoint.status} · ${run.checkpoint.phase}` : "Workflow membership not recorded";
+    card.append(receipt, element("p", "small", state), element("p", "eyebrow", "Original prompt"),
       element("pre", "request-prompt text-break mb-0", request.prompt));
     container.append(card);
   }
 }
 
+function renderOperations(preview) {
+  const operations = preview.operations;
+  const container = document.querySelector("#operation-stats");
+  container.replaceChildren();
+  const activeRun = preview.runs.find((run) => run.checkpoint.status === "running");
+  const cards = [
+    ["Workflow phase", activeRun?.checkpoint.phase ?? "No active run", "Saved state, not a worker heartbeat"],
+    ["Active runs", operations.activeRuns, "At most one top-level request"],
+    ["Active executions", operations.active, "Observed at the frozen snapshot"],
+    ["Queued requests", operations.queuedRequests, "FIFO · separate from subwork"],
+    ["Pending subagent tasks", operations.pendingTasks, "Inside existing runs"],
+    ["Finished attempts", operations.finished, "Includes context handbacks; not acceptance"],
+    ["Failed / interrupted", `${operations.failed} / ${operations.interrupted}`, "Subagent attempts, not original requests"],
+    ["Completed / failed runs", `${operations.completedRuns} / ${operations.failedRuns}`, "Original request outcomes"],
+  ];
+  for (const [label, value, note] of cards) {
+    const column = element("div", "col-6 col-lg-3");
+    const card = element("article", "panel metric-card h-100 p-4");
+    card.append(element("h2", "eyebrow mb-3", label),
+      element("p", "h3 text-break", String(value)), element("p", "metric-note mb-0", note));
+    column.append(card);
+    container.append(column);
+  }
+  renderOutcomes(operations.outcomes);
+}
+function renderOutcomes(outcomes) {
+  const total = outcomes.accepted + outcomes.rejected;
+  const rate = total ? Math.round(outcomes.accepted / total * 100) : null;
+  const svg = (tag, attributes, text) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const chart = svg("svg", { viewBox: "0 0 240 165", class: "outcome-svg", role: "img",
+    "aria-label": `Attempt handover reviews: ${outcomes.accepted} accepted, ${outcomes.rejected} rejected, ${outcomes.pending} pending, ${outcomes["not-submitted"]} not submitted.` });
+  chart.append(svg("circle", { cx: 120, cy: 78, r: 56, class: "ring-background" }));
+  let offset = 0;
+  const circumference = 2 * Math.PI * 56;
+  for (const [count, color] of [[outcomes.accepted, "#8ad0ab"], [outcomes.rejected, "#f3998d"]]) {
+    if (total && count) chart.append(svg("circle", { cx: 120, cy: 78, r: 56, fill: "none", stroke: color,
+      "stroke-width": 12, "stroke-dasharray": `${count / total * circumference} ${circumference}`,
+      "stroke-dashoffset": -offset, transform: "rotate(-90 120 78)" }));
+    offset += total ? count / total * circumference : 0;
+  }
+  chart.append(svg("text", { x: 120, y: 80, "text-anchor": "middle", class: "ring-value" }, rate === null ? "—" : `${rate}%`),
+    svg("text", { x: 120, y: 101, "text-anchor": "middle", class: "chart-label" }, total ? "accepted reviews" : "no decisions yet"));
+  document.querySelector("#outcome-chart").replaceChildren(chart,
+    element("p", "small", `${outcomes.accepted} accepted · ${outcomes.rejected} rejected · ${outcomes.pending} pending · ${outcomes["not-submitted"]} not submitted`));
+  document.querySelector("#outcome-note").textContent =
+    "Denominator: accepted + rejected attempt handovers only. Accepting a context-limit handover is not completion of the task or original request. Orchestrator turns are excluded.";
+}
+function executionCard(task, agents, asOf) {
+  const unavailable = task.kind === "orchestrator" ?
+    (task.export.state === "not-due" ? "Orchestrator transcript only after the overall run ends." :
+      `Final orchestrator export ${task.export.state}: ${task.export.error ?? "not saved yet"}`) :
+    `Subagent export: ${task.export.state}${task.export.error ? ` — ${task.export.error}` : ""}.`;
+  const card = taskCard(task, agents, asOf, {
+    transcriptUnavailable: unavailable,
+    artifactTitle: "Output artifacts · unavailable",
+    artifactNote: "General output-artifact metadata is undefined in v1. Plans, handovers, and session exports are shown separately below.",
+  });
+  card.append(element("p", "small mt-3", `Configured context capacity: ${task.contextWindow.toLocaleString("en-US")} tokens (not usage).`),
+    element("p", "small text-break", `Session file: ${task.sessionPath ?? "No attempt dispatched"}`));
+  if (task.kind === "orchestrator" && task.transcriptUrl) {
+    card.append(element("p", "small", "This is the shared final orchestrator session, not a per-turn export."));
+  }
+  if (task.handover) {
+    card.append(disclosure(`Markdown handover · ${task.handover.path}`, task.handover.text));
+    card.append(element("p", "small text-body-secondary", "Next steps and file lists are agent-reported, not dispatch commands or a verified change audit."));
+  } else if (task.kind === "subagent") {
+    card.append(element("p", "small", "No handover recorded. An interruption is not a completed result."));
+  }
+  return card;
+}
+function runDetails(run) {
+  const section = element("section", "small mt-3");
+  const checkpoint = run.checkpoint;
+  section.append(element("h4", "h6", "Saved run state"),
+    element("p", "", `${run.requestId} · ${run.id} · ${checkpoint.status} / ${checkpoint.phase}`),
+    element("p", "", `Latest checkpoint ${String(checkpoint.number).padStart(6, "0")} saved ${utc(checkpoint.savedAt)}. This is not an execution timestamp.`),
+    disclosure("Original request", run.request.prompt));
+  if (run.plan) section.append(disclosure(`Current Markdown plan · ${run.plan.path}`, run.plan.text));
+  const decisions = element("details", "my-3");
+  decisions.append(element("summary", "", `Applied orchestrator decisions (${checkpoint.decisions.length})`));
+  for (const decision of checkpoint.decisions) decisions.append(element("p", "mt-2",
+    `${utc(decision.at)} · ${decision.attemptId} · ${decision.review}: ${decision.summary}`));
+  section.append(decisions);
+  const history = element("details", "checkpoint-history my-3");
+  history.append(element("summary", "", `Saved checkpoints (${run.checkpoints.length} illustrative snapshots)`));
+  for (const saved of run.checkpoints) history.append(disclosure(
+    `${String(saved.number).padStart(6, "0")}.json · ${utc(saved.savedAt)} · ${saved.phase}`,
+    JSON.stringify(saved, null, 2)));
+  section.append(history);
+  return section;
+}
+function renderConfiguration(preview) {
+  const container = document.querySelector("#configuration-models");
+  container.replaceChildren();
+  document.querySelector("#configuration-empty").hidden = preview.runs.length > 0;
+  for (const run of preview.runs) {
+    const config = run.checkpoint.configuration;
+    const column = element("div", "col-md-6");
+    const card = element("article", "config-agent h-100 p-3");
+    card.append(element("h3", "h6", `${run.title} · ${config.id}`),
+      element("p", "small", `Orchestrator selection: ${config.orchestratorModel}`));
+    for (const model of config.models) card.append(element("p", "small text-break",
+      `${model.id}: ${model.provider} / ${model.modelId} · ${model.contextWindow.toLocaleString("en-US")} tokens`));
+    card.append(element("p", "small text-body-secondary mb-0", "Frozen for this run and recovery. Subagents select from this allowlist; no silent fallback."));
+    column.append(card);
+    container.append(column);
+  }
+}
+function clearWorkflow(message) {
+  disposeFloor();
+  for (const id of ["floor-runs", "request-list", "configuration-models", "operation-stats", "outcome-chart"]) {
+    document.getElementById(id).replaceChildren();
+  }
+  document.querySelector("#outcome-note").textContent = "";
+  document.querySelector("#workflow-data").hidden = true;
+  document.querySelector("#request-count").textContent = "—";
+  document.querySelector("#snapshot-time").textContent = "Workflow unavailable";
+  for (const id of ["operations-empty", "floor-empty", "requests-state", "configuration-empty", "queue-state"]) {
+    const node = document.getElementById(id);
+    node.hidden = false;
+    node.textContent = message;
+  }
+}
 async function refresh() {
   const button = document.querySelector("#refresh-preview");
-  const list = document.querySelector("#request-list");
-  const state = document.querySelector("#requests-state");
   const error = document.querySelector("#preview-error");
-  const count = document.querySelector("#request-count");
   button.disabled = true;
   try {
     const response = await fetch("/api/v1/preview");
-    if (!response.ok) throw new Error("Intake unavailable");
+    if (!response.ok) throw new Error("Workflow unavailable");
     const data = await response.json();
-    list.replaceChildren();
-    count.textContent = "—";
     error.hidden = true;
     document.querySelector("#test-notice").hidden = data.mode !== "test";
     button.hidden = data.mode !== "test";
-    state.hidden = false;
     if (data.mode !== "test") {
-      state.textContent = "Production intake loading is not implemented. No production requests are loaded.";
+      clearWorkflow("Production workflow loading is not implemented. No production requests or runs are loaded.");
       return;
     }
-    renderRequests(data.requests, list);
-    count.textContent = data.requests.length.toLocaleString("en-US");
-    state.hidden = data.requests.length > 0;
-    state.textContent = "No request fixtures in this collection. This does not establish that the factory is idle.";
+    const preview = workflowPresentation(data);
+    renderOperations(preview);
+    renderConfiguration(preview);
+    renderRequests(preview.requests, document.querySelector("#request-list"), preview);
+    mountFloor(preview, document.querySelector("#floor-runs"), executionCard, { runDetails,
+      note: `TEST snapshot: ${utc(data.asOf)}. Provisional observed execution timestamps, not checkpoint-save times or CPU activity. One run at a time; sequential subagents. Review waiting does not extend bars. Finished is not accepted. Blue fill = selected.` });
+    document.querySelector("#request-count").textContent = preview.requests.length.toLocaleString("en-US");
+    document.querySelector("#snapshot-time").textContent = `Frozen workflow snapshot · ${utc(data.asOf)}`;
+    document.querySelector("#workflow-data").hidden = false;
+    document.querySelector("#operations-empty").hidden = true;
+    const empty = document.querySelector("#floor-empty");
+    empty.hidden = preview.runs.length > 0;
+    empty.textContent = "No runs in this snapshot. Queued requests are not past executions.";
+    const requestsState = document.querySelector("#requests-state");
+    requestsState.hidden = preview.requests.length > 0;
+    requestsState.textContent = "No request fixtures in this collection. This does not establish that the factory is idle.";
+    document.querySelector("#queue-state").textContent = preview.queue.length ?
+      `FIFO request queue: ${preview.queue.join(" → ")}. Starts only after the current run ends and workers stop.` : "No queued requests recorded. Factory idle/stopped state remains unknown.";
   } catch {
-    list.replaceChildren();
-    count.textContent = "—";
-    state.hidden = false;
-    state.textContent = "Request fixtures unavailable. No production fallback was attempted.";
-    error.textContent = "V1 intake preview could not be loaded. Check the bundled request fixtures and refresh.";
+    clearWorkflow("Workflow fixtures unavailable. No older-checkpoint or production fallback was attempted.");
+    error.textContent = "V1 workflow preview could not be loaded. Check request/checkpoint fixtures and referenced documents, then refresh.";
     error.hidden = false;
     button.hidden = false;
   } finally {
     button.disabled = false;
   }
 }
-
-if (typeof document !== "undefined") {
+if (typeof document !== "undefined" && document.body.dataset.dashboard === "v1") {
   document.querySelector("#refresh-preview").addEventListener("click", refresh);
   refresh();
 }

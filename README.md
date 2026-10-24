@@ -7,23 +7,46 @@ before Pi or real orchestration is connected.
 ## Dashboard versions
 
 - `/` redirects to `/v1` (GET and HEAD).
-- `/v1` is the storage-v1 intake dashboard: original request IDs/prompts, UTC
-  receipt times, manual source, schema version, and collection count. Receipt
-  ordering is for browsing, not queue position. No run/task status is inferred.
+- `/v1` presents the **full agreed v1 workflow**: requests, FIFO queue, sequential
+  runs, checkpoints, orchestrator turns, subagent attempts, and handback/review.
 - `/v2` preserves the existing execution-oriented design preview described below.
   Both dashboards link to one another; `/v1/` and `/v2/` redirect to canonical URLs.
 
-In test mode, v1 loads `source/fixtures/requests-v1.json`. The array is only a
-preview container; each element conforms to `schemas/storage/v1/request.schema.json`.
-These bundled fictional records are separate from the sibling v2 storage fixture
-and are available through `/api/v1/preview`. They are revalidated on refresh;
-invalid data clears displayed requests rather than retaining stale data. The
-fixture-only validator is not a production intake validator or writer.
+In test mode, `/api/v1/preview` loads bundled fixtures under `source/fixtures/`:
+`requests-v1.json` contains finalized-schema request records; `workflow-v1.json`
+contains separate provisional queue/run/checkpoint records based on `SPEC.md`.
+Run-relative documents live under `workflow-v1/`. See `source/fixtures/README.md`
+for the record conventions and which fields are provisional. These do not finalize
+production schemas or implement a production reader, writer, or recovery engine.
 
-V1 retains explicit unavailable placeholders for factory state, queue/execution
-counts, outcomes, token history, execution timeline/inspector, and agent/model
-configuration. Unknown data is never represented as zero or idle. Production mode
-loads neither set of fixtures and shows honest unconnected states.
+### V1 control room
+
+- **Operations:** saved workflow phase, active runs/executions, FIFO request queue
+  depth, pending subagent tasks, finished/failed/interrupted attempts, and run
+  outcomes. The review ring measures accepted versus rejected attempt handovers,
+  not execution completion or verified request success. Context-limit handbacks
+  can be accepted while the original task remains unfinished.
+- **Factory Floor:** the same shared timeline, selection, zoom, Earlier/Follow,
+  keyboard navigation, fixed-height inspector, and refresh preservation as v2.
+  Runs and subagents execute sequentially. Unstarted tasks remain in the inspector;
+  queued requests do not become fictional execution bars. Explicit observed
+  start/end times and turn boundaries are **provisional fixture fields**, never
+  derived from checkpoint-save or receipt times. Review waiting does not extend bars.
+- **Inspector:** model/provider and frozen configuration, task/attempt/session
+  identity, retry/stop reasons, separate execution/review outcomes, applied
+  decisions, Markdown plans/handovers, and expandable full checkpoint snapshots.
+  Subagent HTML is available after handback; all orchestrator turns link only to
+  the shared final session after the run ends. Interrupted attempts have no
+  fabricated handover; export failures are explicit and never become valid links.
+- **Intake and specification:** original prompts/receipt metadata, independently
+  recorded queue membership and run linkage, and each run's frozen model choices
+  with 250,000-token configured context capacity.
+
+Only genuinely undefined telemetry remains unavailable: token history/usage,
+live activity/heartbeat, factory stop/idle controls, general output-artifact
+inventory, and tool policy. Context capacity is not usage. Invalid records or
+missing referenced documents clear stale displays instead of falling back to an
+older checkpoint. Production mode loads neither fixture set.
 
 ## V2 control room
 
@@ -99,7 +122,9 @@ write API. Invalid or missing fixtures stop startup; invalid edits after startup
 display a preview error. With the image and matching dependencies already cached,
 test startup needs no registry access.
 
-For v1, edit the bundled `source/fixtures/requests-v1.json` and refresh.
+For v1, edit the bundled request/workflow JSON and run-relative documents under
+`source/fixtures/`, then refresh. The latest complete snapshot drives each run;
+older snapshots are retained for inspection, not double-counted in statistics.
 For v2, edit either sibling fixture JSON file and refresh the browser. Simulated running,
 awaiting-review, completed, and failed runs are frozen design examples, not
 live work. All displays are explicitly labeled TEST. Configuration remains
@@ -135,7 +160,7 @@ that list. The context window is capacity, not an exact handover trigger; the Pi
 integration must leave room for handover and verify backend support.
 
 The production storage implementation remains limited to the request JSON
-Schema and fictional example (the v1 dashboard adds read-only intake fixtures):
+Schema and fictional example (the v1 dashboard adds provisional workflow fixtures):
 `schemas/storage/v1/request.schema.json` and `examples/storage/v1/request.json`.
 The production writer, checkpoint/model schemas, and Pi export integration are
 not implemented.
@@ -211,8 +236,10 @@ PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-floo
 PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-intake.mjs
 ```
 
-The intake check covers redirects, fixture rendering, exact prompt whitespace,
-safe text, mobile width, refresh failures, and empty/production states. The floor
+The v1 check (`browser-intake.mjs`) covers the restored timeline, keyboard
+selection, attempt history, handovers, checkpoint inspection, export boundaries,
+frozen models, refresh/zoom preservation, exact prompt whitespace, safe text,
+mobile width, and empty/error/production states. The floor
 check targets `/v2` and uses temporary fixtures and a loopback server to check keyboard selection,
 computed bar fills/borders and persistent selection after mouse clicks or blur,
 parallel overflow/pending access, zoom/follow, refresh preservation, fixed height,
@@ -220,9 +247,13 @@ mobile page width, and empty/error states. It never changes sibling fixtures.
 
 ## Files
 
-- `source/public/intake.html` and `intake.js` — storage-v1 intake and unavailable placeholders.
-- `source/intake-preview.ts` — bundled v1 fixture validation and loading (not production intake).
+- `source/public/intake.html` and `intake.js` — full v1 workflow dashboard.
+- `source/public/workflow.js` — latest-checkpoint projection into the shared floor.
+- `source/intake-preview.ts` — finalized-schema request fixture loading.
+- `source/workflow-preview.ts` — provisional workflow validation and document loading.
+- `source/fixtures/README.md` — fixture contract and explicit production-model gaps.
 - `source/fixtures/requests-v1.json` — fictional, schema-compliant intake records.
+- `source/fixtures/workflow-v1.json` and `workflow-v1/` — checkpoint fixtures and documents.
 - `source/public/index.html` — preserved v2 Bootstrap page and mobile navigation.
 - `source/public/refainery.css` — industrial theme, charts, and timeline layout.
 - `source/server.ts` — explicit public asset routes; no general filesystem root.

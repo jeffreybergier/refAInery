@@ -168,7 +168,7 @@ export function usageLabel(usage) {
     `${counter(usage.cachedInput)} cached input (subset) · ${usage.coverage}`;
 }
 
-function taskCard(task, agents, asOf) {
+export function taskCard(task, agents, asOf, options = {}) {
   const agent = agents.find((agent) => agent.id === task.agentId);
   const card = element("article", `execution-card ${task.status === "running" ? "is-running" : ""}`);
   const header = element("div", "d-flex justify-content-between align-items-center gap-2 mb-3");
@@ -199,10 +199,10 @@ function taskCard(task, agents, asOf) {
   if (details.summary) field("Result summary", details.summary);
   card.append(fields);
   const artifacts = element("details", "small mb-2");
-  artifacts.append(element("summary", "", `Artifacts (${details.artifacts?.length ?? 0} recorded)`));
+  artifacts.append(element("summary", "", options.artifactTitle ?? `Artifacts (${details.artifacts?.length ?? 0} recorded)`));
   const artifactList = element("ul", "");
   for (const artifact of details.artifacts ?? []) artifactList.append(element("li", "", artifact));
-  artifacts.append(artifactList, element("p", "text-body-secondary", "Fixture labels only; artifact downloads are not implemented."));
+  artifacts.append(artifactList, element("p", "text-body-secondary", options.artifactNote ?? "Fixture labels only; artifact downloads are not implemented."));
   const diagnostics = element("details", "small mb-2");
   diagnostics.append(element("summary", "", "Identity and configuration"));
   for (const [label, value] of [["Execution", task.id], ["Task", details.taskId],
@@ -218,7 +218,7 @@ function taskCard(task, agents, asOf) {
     link.rel = "noopener noreferrer";
     card.append(link);
   } else {
-    card.append(element("span", "small text-body-secondary", task.status === "running" ? "Transcript after execution" : "No transcript available"));
+    card.append(element("span", "small text-body-secondary", options.transcriptUnavailable ?? (task.status === "running" ? "Transcript after execution" : "No transcript available")));
   }
   return card;
 }
@@ -285,7 +285,7 @@ async function showPreview() {
   }
 }
 
-if (typeof document !== "undefined") {
+if (typeof document !== "undefined" && document.body.dataset.dashboard === "v2") {
   document.querySelector("#refresh-preview").addEventListener("click", showPreview);
   showPreview();
 }

@@ -36,12 +36,12 @@ test("root and trailing slash redirects preserve explicit version routes", async
   }
 });
 
-test("v1 page has intake and explicit placeholders, not fabricated executions", async () => {
+test("v1 page retains the floor and only leaves undefined telemetry as placeholders", async () => {
   const response = await fetch(origin);
   assert.equal(response.url, `${origin}/v1`);
   const page = await response.text();
   for (const text of ["Request intake", "not queue depth", "Subagent outcomes",
-    "Tokens over time", "Execution timeline unavailable", "Execution inspector unavailable",
+    "Tokens over time", 'id="floor-runs"', "observed execution timestamps",
     "Factory Specification"]) assert.ok(page.includes(text), text);
   assert.doesNotMatch(page, /src="\/assets\/(preview|floor)\.js"/);
   for (const [, path] of page.matchAll(/(?:src|href)="(\/assets\/[^"#]+)"/g)) {
@@ -49,13 +49,15 @@ test("v1 page has intake and explicit placeholders, not fabricated executions", 
   }
 });
 
-test("v1 API supplies only compliant request records and works without v2 data", async () => {
+test("v1 API supplies compliant requests plus separate workflow records without v2 data", async () => {
   const response = await fetch(`${origin}/api/v1/preview`);
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.mode, "test");
-  assert.deepEqual(Object.keys(data).sort(), ["mode", "requests"]);
-  assert.deepEqual(data, await loadIntakePreview());
+  assert.deepEqual(Object.keys(data).sort(), ["asOf", "documents", "mode", "queue", "requests", "runs"]);
+  assert.deepEqual(data.requests, (await loadIntakePreview()).requests);
+  assert.equal(data.runs.length, 2);
+  assert.equal(data.queue.length, 1);
   assert.equal((await fetch(`${origin}/api/preview`)).status, 503);
   const head = await fetch(`${origin}/api/v1/preview`, { method: "HEAD" });
   assert.equal(head.status, 200);
