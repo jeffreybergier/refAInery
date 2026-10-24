@@ -88,6 +88,14 @@ class ConfigMountTests(unittest.TestCase):
         script = command[-1]
         self.assertIn("npm ci --omit=dev --ignore-scripts", script)
         self.assertIn("exec node /app/source/main.ts", script)
+        self.assertIn("developer_cache:/cache", command)
+        self.assertIn("REFAINERY_HOST=0.0.0.0", command)
+        self.assertIn("npm_config_cache=/cache/npm", script)
+        self.assertIn('deps="/cache/refainery/dependencies/$key"', script)
+        self.assertIn('rm -f "$deps/.complete"', script)
+        self.assertIn('touch "$deps/.complete"', script)
+        self.assertIn('ln -s "$deps/node_modules" /app/node_modules', script)
+        self.assertNotIn(f"{self.checkout}/node_modules:/app/node_modules", command)
 
     def assert_missing_checkout_fails_early(self):
         with self.assertRaises(SystemExit) as error:

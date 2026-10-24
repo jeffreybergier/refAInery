@@ -42,20 +42,24 @@ Vibing/
 ```
 
 ```sh
-npm ci --ignore-scripts    # one-time setup, or after dependency changes
-python3 tests/serve.py     # optionally: --port 8090
+python3 serve.py --test    # optionally: --port 8090
+# Compatibility alias: python3 tests/serve.py
 ```
 
-Open `http://127.0.0.1:8080`. This is the fake-data counterpart to the root
-launcher, not a copy of its credential/container operations. Both launch the
-same application and assets. Keep both entry points and their tests maintained
-when changing startup behavior.
+Open `http://127.0.0.1:8080`. Both modes use the same container launcher,
+image, executable/Node-version preflight, dependency setup, and shutdown logic.
+No host Node/npm installation is required. Docker (or Podman) must be running.
+`tests/serve.py` is only an alias for `serve.py --test`.
 
-The test launcher binds only to loopback, does not inherit credentials or
-`NODE_OPTIONS`, and never runs Docker, `op`, Git, SDK tooling, or Pi. After
-installing dependencies it works offline. It reads only the sibling `test/`
-fixtures; there is no production fallback and no write API. Invalid or missing
-fixtures stop startup. Invalid edits after startup display a preview error.
+Test mode supplies explicitly fake `GH_TOKEN` and `STORAGE_REPO` environment
+values. It skips 1Password, GitHub authentication, storage cloning, and SDK
+installation, and does not mount SDK volumes or production data. Only the sibling
+`test/` directories are mounted, read-only. No host credentials or `NODE_OPTIONS`
+are forwarded into the container. The server listens on all container interfaces,
+but its published host port is loopback-only. There is no production fallback or
+write API. Invalid or missing fixtures stop startup; invalid edits after startup
+display a preview error. With the image and matching dependencies already cached,
+test startup needs no registry access.
 
 Edit either fixture JSON file and refresh the browser. Simulated running,
 awaiting-review, completed, and failed runs are frozen design examples, not
@@ -84,17 +88,33 @@ and Altivec SDK prerequisites. It mounts source and npm manifests read-only,
 installs locked production dependencies inside the disposable container, and
 starts the server in production mode, selecting `/app/config/prod` and
 `/app/storage/prod` for future integrations. Production config/storage loading
-is not implemented yet. Node.js 22.18+ and npm must be available in the image.
+is not implemented yet. Node.js 22.18+, npm, and flock must be available in the image.
 
 Bootstrap CSS and its JavaScript bundle are served locally, not from a CDN.
 No external fonts or image services are used. The initial dependency install
-requires npm registry access. Dependencies are not persisted across container
-removal yet.
+requires npm registry access. Both launch modes mount `developer_cache:/cache`:
+
+- `/cache/npm` stores npm's downloaded package cache.
+- `/cache/refainery/dependencies/<key>/node_modules` stores installed production
+  dependencies. The key includes both manifests, Node version/platform/architecture,
+  npm version, and installation policy. A lock serializes installation; a completion
+  marker is written only after success. Matching installations are reused without
+  running `npm ci` again, and different keys do not replace active installations.
+- `/app/node_modules` is an ephemeral container symlink into that volume. Neither
+  launcher creates or uses host `node_modules`. Existing host dependencies are not
+  deleted automatically.
+
+Installation uses `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` with
+GitHub credentials removed from npm's environment. Old dependency generations
+remain in the cache; no automatic pruning is performed. This is a shared trusted
+developer volume, not a security boundary against other containers that can write
+it. Do not delete the whole volume to clear npm data; it also contains other caches.
 
 ## UI-only development and checks
 
-The static UI has no authentication or agent integration and can be previewed
-without credentials, containers, or Apple SDKs:
+The recommended preview is `python3 serve.py --test`: no host npm or credentials
+are needed. The following direct-host commands are optional, not required by either
+launcher, and do install dependencies in the checkout:
 
 ```sh
 npm ci --ignore-scripts
@@ -115,7 +135,7 @@ Tests cover HTTP routes, local assets, dark-theme markup, security headers,
 path isolation, fixture validation/isolation/reloading, derived metrics,
 timeline ordering, chart edge cases, transcript isolation, and both offline
 launcher command constructions. Tests use temporary fixtures, so they do not
-require the sibling repositories. They do not access
+require the sibling repositories. The automated tests do not access
 1Password, start containers, or validate SDK installation.
 
 ## Files
@@ -126,5 +146,6 @@ require the sibling repositories. They do not access
 - `source/main.ts` — shared server entry point and explicit mode selection.
 - `source/preview.ts` — read-only, validated test fixture adapter.
 - `source/public/preview.js` — safe text/SVG rendering and dashboard interactions.
-- `tests/serve.py` — fast, credential-free test launcher.
+- `serve.py` — shared container launcher; `--test` selects fictional fixtures.
+- `tests/serve.py` — compatibility alias for `serve.py --test`.
 - `SPEC.md` — intended product architecture and future behavior.

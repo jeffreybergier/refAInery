@@ -21,7 +21,7 @@ async function main() {
     // Fail closed before listening, rather than falling back to production data.
     await loadPreview(preview);
   }
-  const host = mode === "test" ? "127.0.0.1" : (process.env.REFAINERY_HOST ?? "0.0.0.0");
+  const host = process.env.REFAINERY_HOST ?? (mode === "test" ? "127.0.0.1" : "0.0.0.0");
   const port = Number(process.env.REFAINERY_PORT ?? 8080);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port.");
   const server = createAppServer(preview);

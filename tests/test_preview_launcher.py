@@ -1,4 +1,4 @@
-"""Offline tests for the fake launcher. Never invoke Node or external services."""
+"""Offline checks for the shared container launcher in test mode."""
 
 import contextlib
 import importlib.util
@@ -11,49 +11,63 @@ import unittest
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location(
-    "preview_launcher", Path(__file__).with_name("serve.py")
-)
+    "preview_launcher", Path(__file__).with_name("serve.py"))
 launcher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(launcher)
 
 
 class PreviewLauncherTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(prefix="refainery test ")
         self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
+        root = Path(temporary.name).resolve()
         self.checkout = root / "refAInery"
-        bootstrap = self.checkout / "node_modules/bootstrap/dist/css/bootstrap.min.css"
-        bootstrap.parent.mkdir(parents=True)
-        bootstrap.write_text("/* fake */")
+        self.checkout.mkdir()
         for repository, filename in (("refAInery-config", "config.json"),
                                      ("refAInery-storage", "workshop.json")):
             directory = root / repository / "test"
             directory.mkdir(parents=True)
             (directory / filename).write_text("{}")
-        self.enterContext(patch.object(launcher, "CHECKOUT", self.checkout))
-        self.enterContext(patch.object(launcher.shutil, "which", return_value="/test/node"))
+        self.enterContext(patch.object(launcher.container, "__file__",
+                                      str(self.checkout / "serve.py")))
+        self.credentials = self.enterContext(patch.object(
+            launcher.container, "get_credentials", side_effect=AssertionError("No op")))
+        self.enterContext(patch.object(launcher.container, "select_engine",
+                                      return_value=("/test/docker", "docker")))
         self.process = Mock()
         self.process.wait.return_value = 0
         self.popen = self.enterContext(patch.object(
-            launcher.subprocess, "Popen", return_value=self.process))
+            launcher.container.subprocess, "Popen", return_value=self.process))
+        self.run = self.enterContext(patch.object(launcher.container.subprocess, "run"))
         self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.enterContext(contextlib.redirect_stderr(io.StringIO()))
 
-    def test_only_fake_paths_and_no_inherited_credentials(self):
-        with patch.dict(os.environ, {"GH_TOKEN": "secret", "NODE_OPTIONS": "bad",
-                                    "REFAINERY_MODE": "production"}):
+    def test_fake_environment_read_only_fixtures_and_shared_cache(self):
+        with patch.dict(os.environ, {"GH_TOKEN": "secret", "NODE_OPTIONS": "bad"}):
             self.assertEqual(launcher.main(["--port", "8090"]), 0)
-        arguments = self.popen.call_args
-        self.assertEqual(arguments.args[0], ["/test/node", str(self.checkout / "source/main.ts")])
-        env = arguments.kwargs["env"]
-        self.assertEqual(env["REFAINERY_MODE"], "test")
-        self.assertEqual(env["REFAINERY_HOST"], "127.0.0.1")
-        self.assertEqual(env["REFAINERY_PORT"], "8090")
-        self.assertTrue(env["REFAINERY_CONFIG_DIR"].endswith("refAInery-config/test"))
-        self.assertTrue(env["REFAINERY_STORAGE_DIR"].endswith("refAInery-storage/test"))
-        self.assertNotIn("GH_TOKEN", env)
+        command = self.popen.call_args.args[0]
+        self.assertEqual(command[0], "/test/docker")
+        self.assertIn("REFAINERY_MODE=test", command)
+        self.assertIn("127.0.0.1:8090:8080", command)
+        self.assertIn("developer_cache:/cache", command)
+        for repository, target in (("config", "config"), ("storage", "storage")):
+            self.assertIn(f"type=bind,source={self.checkout.parent}/refAInery-{repository}/test,target=/app/{target}/test,readonly", command)
+        self.assertNotIn("developer_altivec-sdk-legacy:/osxcross/legacy/target/SDK", command)
+        env = self.popen.call_args.kwargs["env"]
+        self.assertEqual(env["GH_TOKEN"], "refainery-test-not-a-secret")
+        self.assertEqual(env["STORAGE_REPO"], "https://example.invalid/test-storage.git")
         self.assertNotIn("NODE_OPTIONS", env)
+        self.credentials.assert_not_called()
+        self.assertIn('if [ "$REFAINERY_MODE" = test ]; then', command[-1])
+        self.assertIn("npm_config_cache=/cache/npm", command[-1])
+        self.assertIn("flock -x 9", command[-1])
+        self.assertIn('ln -s "$deps/node_modules" /app/node_modules', command[-1])
+
+    def test_alias_matches_canonical_command(self):
+        launcher.main([])
+        alias = self.popen.call_args
+        launcher.container.cli(["--test"])
+        self.assertEqual(alias, self.popen.call_args)
 
     def test_missing_fixture_fails_without_starting(self):
         (self.checkout.parent / "refAInery-storage/test/workshop.json").unlink()
@@ -64,7 +78,7 @@ class PreviewLauncherTests(unittest.TestCase):
     def test_symlink_fixture_is_rejected(self):
         fixture = self.checkout.parent / "refAInery-storage/test/workshop.json"
         fixture.unlink()
-        fixture.symlink_to(self.checkout / "node_modules/bootstrap/dist/css/bootstrap.min.css")
+        fixture.symlink_to(self.checkout.parent / "refAInery-config/test/config.json")
         with self.assertRaises(SystemExit):
             launcher.main([])
         self.popen.assert_not_called()
@@ -78,15 +92,15 @@ class PreviewLauncherTests(unittest.TestCase):
         self.process.wait.return_value = 12
         self.assertEqual(launcher.main([]), 12)
 
-    def test_ctrl_c_terminates_child(self):
+    def test_ctrl_c_stops_container(self):
         self.process.wait.side_effect = [KeyboardInterrupt, 0]
         self.assertEqual(launcher.main([]), 130)
-        self.process.terminate.assert_called_once()
+        self.assertEqual(self.run.call_args.args[0][1:4], ["stop", "--time", "5"])
 
-    def test_slow_shutdown_kills_child(self):
-        self.process.wait.side_effect = [KeyboardInterrupt, subprocess.TimeoutExpired("node", 5), 0]
+    def test_slow_shutdown_kills_container(self):
+        self.process.wait.side_effect = [KeyboardInterrupt, subprocess.TimeoutExpired("docker", 10), 0]
         self.assertEqual(launcher.main([]), 130)
-        self.process.kill.assert_called_once()
+        self.assertEqual(self.run.call_args.args[0][1], "kill")
 
 
 if __name__ == "__main__":
