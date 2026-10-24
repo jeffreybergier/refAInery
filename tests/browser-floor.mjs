@@ -53,6 +53,29 @@ try {
   assert.equal(await page.locator(".floor-bar").count(), 30);
   const height = async () => (await page.locator(".floor-panel").boundingBox()).height;
   const initialHeight = await height();
+  const icons = { running: "▶", completed: "✓", failed: "×",
+    "awaiting-review": "◇", cancelled: "—" };
+  const assertStatusIcon = async (bar) => {
+    assert.equal(await bar.locator(".floor-bar-icon").count(), 1);
+    const geometry = await bar.evaluate((el) => {
+      const icon = el.querySelector(".floor-bar-icon");
+      const label = el.querySelector(".floor-bar-label");
+      const rect = el.getBoundingClientRect();
+      const i = icon.getBoundingClientRect();
+      const l = label.getBoundingClientRect();
+      return { status: [...el.classList].find((name) => name.startsWith("status-")).slice(7),
+        icon: icon.textContent, before: getComputedStyle(el, "::before").content,
+        after: getComputedStyle(el, "::after").content,
+        center: rect.y + rect.height / 2, iconCenter: i.y + i.height / 2,
+        labelCenter: l.y + l.height / 2, iconOnLeft: i.right <= l.left };
+    });
+    assert.equal(geometry.icon, icons[geometry.status]);
+    assert.equal(geometry.before, "none");
+    assert.equal(geometry.after, "none");
+    assert.equal(geometry.iconOnLeft, true);
+    assert.ok(Math.abs(geometry.center - geometry.iconCenter) < 1);
+    assert.ok(Math.abs(geometry.labelCenter - geometry.iconCenter) < 1);
+  };
   const normalFill = "rgb(41, 44, 48)";
   const selectedFill = "rgb(200, 229, 255)";
   const style = (bar) => bar.evaluate((el) => {
@@ -67,16 +90,18 @@ try {
     const selectedStyle = await style(bar);
     assert.equal(selectedStyle.fill, selectedFill);
     assert.notEqual(selectedStyle.shadow, "none");
+    await assertStatusIcon(bar);
   };
   // Verify computed appearance, not just ARIA: shared badge CSS previously
   // leaked transparent fills, and Bootstrap removed the mouse-selection outline.
   for (const bar of await page.locator(".floor-bar").all()) {
+    await assertStatusIcon(bar);
     assert.deepEqual(await style(bar), { fill: normalFill, shadow: "none",
       top: "solid", topWidth: "1px", right: "solid", rightWidth: "1px" });
   }
   for (const status of ["completed", "failed", "awaiting-review", "cancelled"]) {
     const bar = page.locator(`.floor-bar.status-${status}`);
-    await bar.click();
+    await bar.locator(".floor-bar-icon").click();
     await assertSelected(bar);
     assert.match(await page.locator(".floor-inspector").innerText(), /Execution 0/);
   }
@@ -135,6 +160,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal((await page.locator(".floor-viewport").boundingBox()).height, 380);
+  for (const bar of await page.locator(".floor-bar").all()) await assertStatusIcon(bar);
   await page.locator(".floor-panel").screenshot({ path: join(root, "mobile.png") });
   storage.runs.splice(1, 1);
   await save();

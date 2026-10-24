@@ -95,10 +95,9 @@ h1 { letter-spacing: -.045em; }
 .floor-snapshot-line { position: absolute; right: 0; top: 0; bottom: 0; border-right: 2px dashed var(--furnace); }
 /* Scope above the shared status badges: every unselected bar has the same
    opaque fill and single border. Status uses text/marker color, not fill. */
-.floor-lane .floor-bar { position: absolute; height: 24px; min-width: 12px; padding: 0 12px; border: 1px solid currentColor; border-radius: 4px; background: #292c30; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; text-align: left; }
-.floor-bar::before, .floor-bar::after { position: absolute; top: 0; bottom: 0; background: inherit; }
-.floor-bar::before { content: "●"; left: 0; }
-.floor-bar::after { content: attr(data-end); right: 0; }
+.floor-lane .floor-bar { position: absolute; display: flex; align-items: center; gap: 3px; height: 24px; min-width: 16px; padding: 0 2px; border: 1px solid currentColor; border-radius: 4px; background: #292c30; overflow: hidden; white-space: nowrap; font-size: 11px; line-height: 16px; text-align: left; }
+.floor-bar-icon { flex: 0 0 10px; text-align: center; }
+.floor-bar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Selection must survive Bootstrap's mouse-focus outline reset. Keep it
    independent from keyboard focus, which retains its own amber outline. */
 .floor-lane .floor-bar[aria-pressed="true"] { background: #c8e5ff; color: #102332; border-color: #c8e5ff; box-shadow: 0 0 0 2px #c8e5ff; font-weight: 700; z-index: 1; }

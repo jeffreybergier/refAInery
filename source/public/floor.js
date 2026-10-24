@@ -21,6 +21,10 @@ export function timelineLayout(runs, asOf) {
   }) };
 }
 
+const statusIcons = {
+  running: "▶", completed: "✓", failed: "×",
+  "awaiting-review": "◇", cancelled: "—",
+};
 const state = { zoom: 1, follow: true, left: 0, top: 0, selection: null };
 let cleanup = () => {};
 export function disposeFloor() { cleanup(); cleanup = () => {}; }
@@ -99,12 +103,14 @@ export function mountFloor(preview, container, taskCard) {
     for (const item of executions.filter((item) => item.row < 3)) {
       const { task } = item;
       const agent = preview.agents.find((agent) => agent.id === task.agentId);
-      const endMark = task.status === "running" ? "▶" : task.status === "failed" ? "×" : "■";
-      const bar = selectable(`${task.kind === "orchestrator" ? "O" : "S"}: ${agent.name}`,
-        run, task, `floor-bar status-${task.status} kind-${task.kind}`);
-      bar.dataset.end = endMark;
+      const bar = selectable("", run, task,
+        `floor-bar status-${task.status} kind-${task.kind}`);
+      const icon = node("span", "floor-bar-icon", statusIcons[task.status]);
+      icon.setAttribute("aria-hidden", "true");
+      bar.append(icon, node("span", "floor-bar-label",
+        `${task.kind === "orchestrator" ? "O" : "S"}: ${agent.name}`));
       bar.style.left = `${item.left * 100}%`;
-      bar.style.width = `max(12px, ${item.width * 100}%)`;
+      bar.style.width = `max(16px, ${item.width * 100}%)`;
       bar.style.top = `${10 + item.row * 30}px`;
       const description = `${run.title}: ${task.title}. ${task.kind} ${agent.name}, ${task.status}. Start ${timestamp(Date.parse(task.startedAt))}. ${task.endedAt ? `End ${timestamp(Date.parse(task.endedAt))}` : `In flight at snapshot ${timestamp(layout.end)}`}.`;
       bar.title = description;
@@ -132,7 +138,7 @@ export function mountFloor(preview, container, taskCard) {
     follow.setAttribute("aria-pressed", "false");
     viewport.scrollBy({ left: -Math.max(200, viewport.clientWidth / 2) });
   }), follow, zoomOut, zoomLabel, zoomIn,
-  node("span", "floor-legend", "● Start · ■ End · × Failed · ▶ Running · O Orchestrator / S Subagent"),
+  node("span", "floor-legend", "▶ Running · ✓ Succeeded · × Failed · ◇ Awaiting review · — Cancelled · O Orchestrator / S Subagent"),
   node("span", "floor-legend floor-selection-key", "Selected"));
   const note = node("p", "floor-note small text-body-secondary m-0 p-2",
     `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Status text/markers: green = succeeded, amber = running or awaiting review, red = failed, gray = cancelled. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
@@ -183,6 +189,6 @@ export function mountFloor(preview, container, taskCard) {
     inspector.append(node("p", "small", "The previously selected job is no longer in this snapshot. Select a job or execution."));
   } else {
     inspector.append(node("h3", "h6", "Select a job or execution"),
-      node("p", "small text-body-secondary", "Click a bar or its endpoints for agent details. Select a job label for every execution, including overflow and tasks not yet started. Keyboard: Tab to a bar, then Enter or Space to select."));
+      node("p", "small text-body-secondary", "Click a bar or its status icon for agent details. Select a job label for every execution, including overflow and tasks not yet started. Keyboard: Tab to a bar, then Enter or Space to select."));
   }
 }

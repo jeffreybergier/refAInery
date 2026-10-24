@@ -550,8 +550,10 @@ task counts, subagent outcomes, and input/output tokens over time), followed
 by Factory Floor (one shared wall-clock timeline with a compact lane per run).
 A fixed-height inspector above the internally scrolling timeline displays the
 selected execution or job. Bars use actual start/end timestamps on a common
-axis, with start/stop markers and an open running endpoint at the frozen test
-snapshot. They represent execution lifetimes, not CPU activity. Orchestrators
+axis, with running bars extending to the frozen test snapshot. Each bar has
+one status icon on the left, vertically centered with its text; there are no
+endpoint markers. Positions and lengths represent execution lifetimes, not
+CPU activity. Orchestrators
 and subagents share the view with explicit role labels. Timestamp overlaps,
 not stage numbers, determine up to three compact parallel subrows per job;
 overflow counts on job labels lead to the full task list in the inspector.

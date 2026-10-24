@@ -13,10 +13,11 @@ before Pi or real orchestration is connected.
    orchestrators and pending/cancelled work. Token counts are per interval,
    not cumulative. Times and elapsed durations use the frozen fixture snapshot.
 2. **Factory Floor** — a shared wall-clock timeline with one compact lane per
-   job and a fixed-height detail inspector above it. Select a bar or endpoint
+   job and a fixed-height detail inspector above it. Select a bar or status icon
    for agent/orchestrator details, timing, status, and available sample transcript.
-   Start/end markers and proportional bar lengths show execution lifetimes,
-   not CPU activity. Unselected bars have a uniform opaque neutral fill and
+   Each bar has one left-aligned status icon, vertically centered with its label:
+   ▶ running, ✓ succeeded, × failed, ◇ awaiting review, or — cancelled.
+   Bar positions and proportional lengths show execution lifetimes, not CPU activity. Unselected bars have a uniform opaque neutral fill and
    single border; status is shown by text/marker color, and O/S labels identify
    orchestrators/subagents. The selected bar has a light-blue fill and ring
    that persist independently of mouse or keyboard focus. Overlapping executions use up to three thin subrows per
