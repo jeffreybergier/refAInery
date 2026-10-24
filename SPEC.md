@@ -262,6 +262,17 @@ before implementation. A transcript alone is not a scheduler recovery record.
 
 ### 6.5 Authoritative JSON checkpoints
 
+A **checkpoint is saved run state**: a complete snapshot of where one run
+stands, so restarting the application does not mean forgetting its progress.
+It answers which request is being executed, which plan and frozen configuration
+apply, what attempts have occurred, and what the orchestrator must do next.
+Checkpoints are a required part of the production storage model, not optional
+logs or dashboard caches.
+
+For example, a checkpoint can say: "Subagent 1 has stopped, its handover is
+saved, and the orchestrator needs to review it." This is different from the
+handover's description of the work or Pi's conversation history.
+
 Use numbered, immutable JSON snapshots of complete workflow control state.
 The highest committed, valid revision is authoritative; older revisions retain
 transition history. Do not maintain independently authoritative copies of a
@@ -275,7 +286,10 @@ other. Consumed tokens count even if a task fails or its result is rejected.
 Each checkpoint records:
 
 - Schema version, run ID, revision, and timestamps.
-- Run status, optional parent run, and final outcome when terminal.
+- Original request identity, run status, optional parent run, and final outcome
+  when terminal.
+- Current execution phase, active attempt identity (or none), and pending
+  handover/result references requiring orchestrator review.
 - Workflow/application version, configuration snapshot identity, model
   configuration, tool policy, and limits.
 - Plan revision, task definitions, and their ordering or prerequisites.
@@ -285,7 +299,26 @@ Each checkpoint records:
 - Pending approvals and recorded operator decisions.
 - The transition that produced the checkpoint and its reason.
 
-Keep large inputs, results, artifacts, and transcripts outside checkpoints and
+Write a new checkpoint at meaningful workflow transitions, for example:
+
+```text
+checkpoints/
+  000001.json   # Run created with request and frozen configuration references
+  000002.json   # Subagent assignment saved, ready for dispatch
+  000003.json   # Subagent stopped; handover saved, awaiting orchestrator review
+  000004.json   # Orchestrator decision committed, with resulting run state
+```
+
+These are illustrative milestones, not a fixed number of revisions or a final
+schema. Each file contains the complete workflow control state at that point,
+not merely a change event. Subsequent snapshots retain earlier attempt outcomes
+and decision identities alongside the current state. A saved dispatch intent is
+not proof that a worker started; recovery must reconcile uncertain execution
+rather than blindly replay it.
+
+A checkpoint is not a transcript, handover document, or workspace backup. It
+cannot by itself prove that an interrupted action is safe to repeat. Keep large
+inputs, results, handovers, artifacts, and transcripts outside checkpoints and
 reference them. Finalize referenced immutable files before committing a
 checkpoint. Write each checkpoint to a temporary sibling file, flush it, rename
 it to its final numbered name, and flush the containing directory where
