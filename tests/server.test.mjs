@@ -50,6 +50,7 @@ test("serves local styles and Bootstrap JavaScript with correct types", async ()
     ["bootstrap.min.css", /text\/css/, /Bootstrap/],
     ["bootstrap.bundle.min.js", /text\/javascript/, /Bootstrap/],
     ["refainery.css", /text\/css/, /--furnace/],
+    ["floor.js", /text\/javascript/, /export function mountFloor/],
   ]) {
     const response = await fetch(`${origin}/assets/${path}?v=1`);
     assert.equal(response.status, 200);

@@ -12,12 +12,19 @@ before Pi or real orchestration is connected.
    from tasks. Success rate uses completed/failed subagents only, excluding
    orchestrators and pending/cancelled work. Token counts are per interval,
    not cumulative. Times and elapsed durations use the frozen fixture snapshot.
-2. **Factory Floor** — one horizontal execution timeline per run. History is
-   ordered by start time, with in-flight groups at the right. Tasks sharing a
-   stage stack vertically to represent parallel execution. Timelines initially
-   scroll to current/latest work and have keyboard-accessible scrolling and
-   Earlier/Latest buttons. Unstarted tasks are listed separately, not drawn as
-   past executions. Finished tasks link to sample HTML transcripts when present.
+2. **Factory Floor** — a shared wall-clock timeline with one compact lane per
+   job and a fixed-height detail inspector above it. Select a bar or endpoint
+   for agent/orchestrator details, timing, status, and available sample transcript.
+   Start/end markers and proportional bar lengths show execution lifetimes,
+   not CPU activity. Overlapping executions use up to three thin subrows per
+   job, independent of stage numbers. Job labels show overflow and pending counts;
+   select a job to access every task, including overflow and unstarted tasks.
+   The timeline scrolls internally without growing the page as jobs arrive.
+   Sticky labels/ruler, zoom, Earlier, and Follow latest support browsing.
+   Browsing away from the latest time pauses following. Selection, zoom, and
+   scroll position survive fixture refreshes; removed selections fall back to
+   their job or an explicit empty selection. Buttons support Tab and Enter/Space.
+   Running bars end at the frozen test snapshot, never the viewer's clock.
 3. **Factory Specification** — always-visible reference section at the bottom with
    config-derived agent definitions. These are not active worker processes.
 
@@ -131,10 +138,22 @@ npm test
 
 Tests cover HTTP routes, local assets, dark-theme markup, security headers,
 path isolation, fixture validation/isolation/reloading, derived metrics,
-timeline ordering, chart edge cases, transcript isolation, and both offline
+shared timeline positioning/overlap packing, chart edge cases, transcript isolation, and both offline
 launcher command constructions. Tests use temporary fixtures, so they do not
 require the sibling repositories. The automated tests do not access
 1Password, start containers, or validate SDK installation.
+
+An optional Chromium interaction regression check uses a separately installed
+Playwright (no change to the app's dependencies). Install its Chromium browser,
+then run:
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-floor.mjs
+```
+
+It uses temporary fixtures and a loopback server to check keyboard selection,
+parallel overflow/pending access, zoom/follow, refresh preservation, fixed height,
+mobile page width, and empty/error states. It never changes sibling fixtures.
 
 ## Files
 
@@ -144,5 +163,6 @@ require the sibling repositories. The automated tests do not access
 - `source/main.ts` — shared server entry point and explicit mode selection.
 - `source/preview.ts` — read-only, validated test fixture adapter.
 - `source/public/preview.js` — safe text/SVG rendering and dashboard interactions.
+- `source/public/floor.js` — shared timeline layout, inspector, and navigation.
 - `serve.py` — shared container launcher; `--test` selects fictional fixtures.
 - `SPEC.md` — intended product architecture and future behavior.

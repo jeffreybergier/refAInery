@@ -547,10 +547,19 @@ data; no real activity, completion, or approval is implied.
 
 The Control Room presents Factory Operations (simulated factory state, derived
 task counts, subagent outcomes, and input/output tokens over time), followed
-by Factory Floor (one horizontal execution timeline per run). Historical
-stages are ordered by start time, with in-flight stages on the right; parallel
-executions share a stage and stack vertically. Unstarted tasks are listed
-separately. Finished executions link to sample transcripts when available.
+by Factory Floor (one shared wall-clock timeline with a compact lane per run).
+A fixed-height inspector above the internally scrolling timeline displays the
+selected execution or job. Bars use actual start/end timestamps on a common
+axis, with start/stop markers and an open running endpoint at the frozen test
+snapshot. They represent execution lifetimes, not CPU activity. Orchestrators
+and subagents share the view with explicit role labels. Timestamp overlaps,
+not stage numbers, determine up to three compact parallel subrows per job;
+overflow counts on job labels lead to the full task list in the inspector.
+Unstarted tasks are accessible there but never drawn as past executions.
+Sticky labels/ruler, zoom, Earlier, Follow latest, and keyboard-operable buttons
+support navigation. Browsing history pauses following; selection, zoom, and
+scroll position persist across valid refreshes without growing the page.
+Finished executions link to sample transcripts when available.
 Config-derived agent definitions live in an always-visible Factory Specification
 section at the bottom. Static introductory cards are no longer displayed.
 

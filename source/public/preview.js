@@ -1,3 +1,5 @@
+import { mountFloor, disposeFloor } from "./floor.js";
+
 const labels = {
   running: "Running", queued: "Queued", "awaiting-review": "Awaiting review",
   completed: "Succeeded", failed: "Failed", cancelled: "Cancelled",
@@ -6,20 +8,6 @@ const number = (value) => value.toLocaleString("en-US");
 const clock = (value) => value.slice(11, 16);
 
 // Pure presentation helpers are also exercised by offline tests.
-export function executionStages(tasks) {
-  const stages = new Map();
-  for (const task of tasks.filter((task) => task.startedAt !== null)) {
-    if (!stages.has(task.stage)) stages.set(task.stage, []);
-    stages.get(task.stage).push(task);
-  }
-  return [...stages].map(([stage, tasks]) => ({
-    stage, tasks: tasks.sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
-    current: tasks.some((task) => task.status === "running"),
-    firstStart: tasks.reduce((time, task) => task.startedAt < time ? task.startedAt : time, tasks[0].startedAt),
-  })).sort((a, b) => Number(a.current) - Number(b.current) ||
-    a.firstStart.localeCompare(b.firstStart) || a.stage - b.stage);
-}
-
 export function duration(task, asOf) {
   if (!task.startedAt) return "Not started";
   const seconds = Math.max(0, Math.floor((Date.parse(task.endedAt ?? asOf) - Date.parse(task.startedAt)) / 1000));
@@ -166,7 +154,11 @@ function taskCard(task, agents, asOf) {
   card.append(header, element("h4", "h6 mb-1", agent.name),
     element("p", "small text-body-secondary mb-3", agent.role),
     element("p", "task-title mb-3", task.title));
-  card.append(element("p", "execution-time mb-3", `${clock(task.startedAt)} UTC · ${duration(task, asOf)}`));
+  const formatTime = (value) => value.replace("T", " ").replace("Z", " UTC");
+  const timing = task.startedAt
+    ? `${formatTime(task.startedAt)} → ${task.endedAt ? formatTime(task.endedAt) : "In flight"} · ${duration(task, asOf)}`
+    : "Not started";
+  card.append(element("p", "execution-time mb-3", timing));
   if (task.transcriptUrl) {
     const link = element("a", "transcript-link", "View sample transcript ↗");
     link.href = task.transcriptUrl;
@@ -179,79 +171,10 @@ function taskCard(task, agents, asOf) {
   return card;
 }
 
-let timelineObservers = [];
-function clearTimelineObservers() {
-  for (const observer of timelineObservers) observer.disconnect();
-  timelineObservers = [];
-}
 function renderFloor(preview) {
-  clearTimelineObservers();
-  const runs = document.querySelector("#floor-runs");
-  runs.replaceChildren();
   document.querySelector("#floor-empty").hidden = preview.runs.length > 0;
   document.querySelector("#floor-empty").textContent = "No runs in this snapshot.";
-  for (const run of preview.runs) {
-    const panel = element("article", "panel run-panel p-3 p-md-4");
-    const heading = element("div", "d-flex flex-wrap justify-content-between align-items-start gap-3 mb-2");
-    const title = element("div", "run-heading");
-    title.append(element("p", "eyebrow mb-2", run.id), element("h3", "h5 mb-2", run.title));
-    heading.append(title, badge(run.status));
-    panel.append(heading, element("p", "small text-body-secondary mb-3", run.summary));
-    const groups = executionStages(run.tasks);
-    if (groups.length) {
-      const controls = element("div", "d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2");
-      controls.append(element("p", "execution-time mb-0", "History → Current / Stacked cards share a parallel stage"));
-      const buttons = element("div", "d-flex gap-2");
-      const earlier = element("button", "btn btn-outline-light btn-sm", "← Earlier");
-      const latest = element("button", "btn btn-outline-light btn-sm", "Latest →");
-      earlier.type = latest.type = "button";
-      earlier.setAttribute("aria-label", `Earlier executions for ${run.title}`);
-      latest.setAttribute("aria-label", `Latest executions for ${run.title}`);
-      buttons.append(earlier, latest);
-      controls.append(buttons);
-      const track = element("div", "execution-scroll");
-      track.tabIndex = 0;
-      track.setAttribute("role", "region");
-      track.setAttribute("aria-label", `${run.title} execution timeline. Scroll horizontally to see history.`);
-      const stages = element("ol", "execution-track");
-      for (const group of groups) {
-        const column = element("li", "stage-column");
-        column.append(element("p", `stage-label ${group.current ? "accent" : ""}`,
-          `${group.current ? "In flight" : `Stage ${group.stage + 1}`} · ${group.tasks.length > 1 ? "Parallel" : "Single execution"}`));
-        for (const task of group.tasks) column.append(taskCard(task, preview.agents, preview.operations.asOf));
-        stages.append(column);
-      }
-      track.append(stages);
-      earlier.addEventListener("click", () => track.scrollBy({ left: -310 }));
-      latest.addEventListener("click", () => { track.scrollLeft = track.scrollWidth; });
-      const update = () => {
-        earlier.disabled = track.scrollLeft <= 1;
-        latest.disabled = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1;
-      };
-      track.addEventListener("scroll", update);
-      // Disconnect observers on refresh, including after invalid fixture edits.
-      const observer = new ResizeObserver(update);
-      observer.observe(track);
-      timelineObservers.push(observer);
-      panel.append(controls, track);
-      requestAnimationFrame(() => {
-        track.scrollLeft = track.scrollWidth;
-        update();
-      });
-    } else {
-      panel.append(element("p", "text-body-secondary", "No executions have started."));
-    }
-    const unstarted = run.tasks.filter((task) => task.startedAt === null);
-    if (unstarted.length) {
-      const pending = element("div", "pending-tasks mt-3 pt-3");
-      pending.append(element("p", "eyebrow mb-2", "Not started · outside the execution timeline"));
-      const list = element("ul", "list-unstyled small mb-0");
-      for (const task of unstarted) list.append(element("li", "text-body-secondary py-1", `${task.title} — ${labels[task.status]}`));
-      pending.append(list);
-      panel.append(pending);
-    }
-    runs.append(panel);
-  }
+  mountFloor(preview, document.querySelector("#floor-runs"), taskCard);
 }
 
 function renderConfiguration(preview) {
@@ -290,7 +213,7 @@ async function showPreview() {
     refresh.hidden = false;
   } catch {
     // Never leave apparently healthy but stale metrics on screen after a bad edit.
-    clearTimelineObservers();
+    disposeFloor();
     document.querySelector("#operations-data").hidden = true;
     document.querySelector("#floor-runs").replaceChildren();
     document.querySelector("#configuration-agents").replaceChildren();

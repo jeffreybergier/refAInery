@@ -8,6 +8,7 @@ const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
   ["/assets/refainery.css", ["./public/refainery.css", "text/css; charset=utf-8"]],
   ["/assets/preview.js", ["./public/preview.js", "text/javascript; charset=utf-8"]],
+  ["/assets/floor.js", ["./public/floor.js", "text/javascript; charset=utf-8"]],
   ["/assets/bootstrap.min.css", [
     "../node_modules/bootstrap/dist/css/bootstrap.min.css", "text/css; charset=utf-8",
   ]],
