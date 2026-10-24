@@ -16,7 +16,14 @@ before Pi or real orchestration is connected.
    job and a fixed-height detail inspector above it. Select a bar or status icon
    for agent/orchestrator details, timing, status, and available sample transcript.
    Each bar has one left-aligned status icon, vertically centered with its label:
-   ▶ running, ✓ succeeded, × failed, ◇ awaiting review, or — cancelled.
+   ▶ running, ✓ finished, × failed, ◇ awaiting review, — cancelled, or ! interrupted.
+   Finished does not imply verified success or result acceptance. The inspector
+   separates execution outcome from review and shows model/provider, current
+   activity, last observation (not a heartbeat), and usage with unknown/partial
+   coverage. Optional metadata adds attempt/turn identity, retry/waiting reasons,
+   result summaries, artifact labels, diagnostics, and selectable attempt history.
+   Missing metadata is explicitly labeled, never synthesized. Review waiting
+   does not extend execution bars.
    Bar positions and proportional lengths show execution lifetimes, not CPU activity. Unselected bars have a uniform opaque neutral fill and
    single border; status is shown by text/marker color, and O/S labels identify
    orchestrators/subagents. The selected bar has a light-blue fill and ring
@@ -76,7 +83,11 @@ live work. All displays are explicitly labeled TEST. Configuration remains
 fixture v1; storage uses fixture v2 for telemetry, execution timing, grouping,
 and transcript references. The fixture format is intentionally separate from
 future production schemas/checkpoints.
-See each sibling README for the fields and references. Do not put secrets or
+See each sibling README for the base fields and references. `SPEC.md` section
+6.11 documents the optional backward-compatible v2 execution `details` fields;
+existing fixtures need no migration. These fields are fictional presentation
+metadata, not a claim of live Pi telemetry. Artifact labels are text only;
+artifact downloads and live activity streams are not implemented. Do not put secrets or
 real private data in fixtures.
 
 Transcript links open separate tabs containing explicitly labeled sample HTML,

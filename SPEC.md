@@ -586,6 +586,99 @@ reload behavior does not change the immutable
 per-run production configuration rule. No automatic reset or promotion from
 test into production is allowed. Neither area may contain credentials.
 
+#### Factory Floor inspector and telemetry contract
+
+The preview inspector now separates **execution outcome** from **result review**.
+A `completed` fixture execution is labeled **Finished**, not Succeeded;
+`awaiting-review` is shown as Finished with Pending review. Completion does not
+prove correctness, passing checks, or orchestrator acceptance. The separate
+Factory Operations fixture outcome chart remains an execution-outcome summary,
+not a quality measurement.
+
+The production identity model is run → task → attempt → Pi session for
+subagents, and run → orchestrator turn → shared orchestrator Pi session for
+orchestration. Each retry retains a distinct attempt and execution bar; each
+orchestrator turn has its own execution interval even though the conversation
+persists between turns. Do not draw an entire orchestrator session lifetime as
+continuous active work. Unstarted tasks remain in the job inspector, not the
+past-execution timeline. Legacy fixtures without attempt/turn identity show
+**Not recorded** rather than inventing an attempt number or grouping by title.
+
+Inspector information has explicit ownership:
+
+| Information | Production authority |
+| --- | --- |
+| Job/task titles, dependencies, queued/waiting reason, attempts, review decisions | refAInery workflow checkpoints and recorded decisions |
+| Agent name/role, approved tool policy, configuration identity | Immutable per-run configuration, not live configuration |
+| Effective model/provider, message/tool activity, retry/compaction observations, session ID | Pinned Pi adapter observations |
+| Execution boundaries, last observed activity, worker interruption | refAInery scheduler and timestamped adapter observations |
+| Validated outcome summary and artifact references | Durable refAInery result record |
+| Normalized usage and coverage | Independent accounting ledger, not reconstructed session totals |
+| Conversation/activity transcript | Pi-owned session through approved adapter/export APIs |
+
+The compact inspector presents attempt or turn identity, execution status,
+separate result-review status, start/end and elapsed wall-clock time, current
+activity, model/provider, last activity, and usage coverage. When recorded, it
+also shows queued/review timestamps, outcome/waiting and retry reasons, and a
+result summary. Expandable sections expose artifact labels, diagnostic identity
+and configuration, and selectable attempt history. Sample transcript links keep
+the existing isolated report behavior. Artifact downloads and a live activity
+stream are not implemented in this preview.
+
+Execution time ends when the worker execution ends; awaiting review never
+extends its bar. Review timing is separate. `interrupted` is a distinct status,
+not success, cancellation, or proof of safe replay. Last activity is an
+observation timestamp, **not a worker heartbeat**. Do not infer worker death
+from quiet output. Missing information is explicitly Not recorded, Not reported,
+or Unavailable; known zero usage remains distinct from unknown counters. Cached
+input is a subset of normalized input, not additional consumption. Final usage
+means reporting finality, not necessarily availability of every counter.
+
+Pi lifecycle integration must be verified against the pinned dependency. The
+reviewed installed Pi 1.3.0 documentation distinguishes `agent_end` (a low-level
+run ending) from `agent_settled` (no further automatic work); neither is a
+workflow-success or result-acceptance signal. Persist captured observations
+through the adapter rather than trying to recover every timing or state detail
+from opaque conversation files after a crash. Internal retries, compaction,
+nested model calls, and incomplete usage still require the accounting coverage
+verification in section 6.12. The preview does not claim this integration exists.
+
+Do not promise percentage complete, ETA, verified correctness, exact billing,
+GPU/power/memory telemetry, or a complete changed-file list from Pi session
+metadata alone. These require separate workflow, validation, engine, accounting,
+or workspace instrumentation. Safe activity summaries must not expose raw tool
+arguments or credentials. Artifact paths are not automatically downloadable URLs.
+
+**Backward-compatible fixture-v2 inspector extension:** each execution in
+`test/workshop.json` may include a `details` object. Only validated, explicitly
+selected fields are returned to the browser:
+
+- `taskId` and positive `attemptNumber` identify subagent attempt history within
+  a run; duplicate task/attempt pairs are rejected. `turnId` identifies an
+  orchestrator turn and is unique within a run. These identities are not
+  interchangeable; `id` remains the unique presentation execution identity.
+- `sessionId`, `model`, `provider`, `activity`, `summary`, `reason`, `retryReason`,
+  `configuration`, and `toolPolicy` are optional non-secret display metadata.
+- `review` is `unknown`, `not-submitted`, `pending`, `accepted`, `rejected`, or
+  `not-applicable`. Missing review remains unknown, except the existing
+  `awaiting-review` status explicitly implies pending review. Do not infer
+  acceptance from `completed`.
+- `queuedAt`, `lastActivityAt`, and `reviewedAt` are optional UTC timestamps.
+  Queue time precedes execution; activity lies within execution; a recorded
+  review decision follows execution and requires accepted/rejected review.
+  No observation may exceed the frozen snapshot. Pending/accepted/rejected
+  review requires a finished execution.
+- `usage` contains nullable `input`, `output`, and `cachedInput` nonnegative
+  integer counters plus `coverage`: `partial`, `final`, or `unavailable`.
+  Unavailable usage cannot carry numeric counters. Cached input cannot exceed
+  known input. These are normalized fictional counters, not raw Pi usage.
+- `artifacts` is an optional list of display labels rendered as text, never HTML
+  or arbitrary file links. Unrecognized metadata is not passed through.
+- Execution/run statuses additionally admit `interrupted`; interrupted
+  executions require start and end timestamps. Existing v2 fixtures remain
+  valid and visibly disclose absent metadata. This is a presentation extension,
+  not the production persistence or accounting schema.
+
 ### 6.12 Usage accounting and economic comparisons
 
 #### Authority and scope
@@ -965,3 +1058,4 @@ These criteria are provisional until the first workflow is chosen:
 | D-019 | Root-level prod/test namespaces in configuration and storage repositories; credential-free local test launcher with read-only fictional fixtures | Confirmed; initial preview implemented |
 | D-020 | Independent immutable per-inference accounting ledger; per-model/per-machine odometer with explicit unknown usage; summaries are rebuildable | Confirmed; implementation pending |
 | D-021 | Versioned pricing and comparison policies; cloud-equivalent spend and purchase-price recovery are estimates separate from measured usage | Confirmed; implementation pending |
+| D-022 | Attempt/turn-aware Factory Floor inspector; execution completion separate from result acceptance; explicit telemetry sources and unavailable coverage | Preview implemented; production Pi adapter pending |

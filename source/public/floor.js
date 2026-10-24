@@ -23,7 +23,7 @@ export function timelineLayout(runs, asOf) {
 
 const statusIcons = {
   running: "▶", completed: "✓", failed: "×",
-  "awaiting-review": "◇", cancelled: "—",
+  "awaiting-review": "◇", cancelled: "—", interrupted: "!",
 };
 const state = { zoom: 1, follow: true, left: 0, top: 0, selection: null };
 let cleanup = () => {};
@@ -40,6 +40,10 @@ const button = (text, action, className = "btn btn-outline-light btn-sm") => {
   result.addEventListener("click", action);
   return result;
 };
+const executionStatus = (task) => task.status === "completed" ? "finished" :
+  task.status === "awaiting-review" ? "finished · awaiting review" : task.status;
+const identity = (task) => task.details?.attemptNumber ? ` · Attempt ${task.details.attemptNumber}` :
+  task.details?.turnId ? ` · Turn ${task.details.turnId}` : "";
 const timestamp = (time) => new Date(time).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
 export function mountFloor(preview, container, taskCard) {
@@ -70,14 +74,31 @@ export function mountFloor(preview, container, taskCard) {
     const heading = node("h3", "h6", `${run.title} · ${run.status}`);
     inspector.replaceChildren(heading);
     if (task) {
-      inspector.append(taskCard(task, preview.agents, preview.operations.asOf),
-        button("All job executions / pending tasks", () => select(run)));
+      inspector.append(taskCard(task, preview.agents, preview.operations.asOf));
+      const history = run.tasks.filter((item) => task.details?.taskId &&
+        item.details?.taskId === task.details.taskId);
+      const attempts = node("details", "small my-2");
+      attempts.append(node("summary", "", "Attempt history"));
+      if (history.length) {
+        const list = node("ul", "floor-execution-list");
+        for (const item of history.slice().sort((a, b) =>
+          (a.details.attemptNumber ?? Infinity) - (b.details.attemptNumber ?? Infinity))) {
+          const li = node("li", "");
+          li.append(button(`${item.title}${identity(item)} — ${executionStatus(item)}`,
+            () => select(run, item)));
+          list.append(li);
+        }
+        attempts.append(list);
+      } else attempts.append(node("p", "", task.kind === "orchestrator"
+        ? "Orchestrator turns share a conversation; they are not task attempts."
+        : "Task/attempt identity not recorded in this fixture."));
+      inspector.append(attempts, button("All job executions / pending tasks", () => select(run)));
     } else {
       inspector.append(node("p", "small text-body-secondary", run.summary));
       const list = node("ul", "floor-execution-list");
       for (const execution of run.tasks) {
         const li = node("li", "");
-        li.append(button(`${execution.kind}: ${execution.title} — ${execution.status}${execution.startedAt ? "" : " (not started)"}`,
+        li.append(button(`${execution.kind}: ${execution.title}${identity(execution)} — ${executionStatus(execution)}${execution.startedAt ? "" : " (not started)"}`,
           () => select(run, execution)));
         list.append(li);
       }
@@ -112,7 +133,7 @@ export function mountFloor(preview, container, taskCard) {
       bar.style.left = `${item.left * 100}%`;
       bar.style.width = `max(16px, ${item.width * 100}%)`;
       bar.style.top = `${10 + item.row * 30}px`;
-      const description = `${run.title}: ${task.title}. ${task.kind} ${agent.name}, ${task.status}. Start ${timestamp(Date.parse(task.startedAt))}. ${task.endedAt ? `End ${timestamp(Date.parse(task.endedAt))}` : `In flight at snapshot ${timestamp(layout.end)}`}.`;
+      const description = `${run.title}: ${task.title}. ${task.kind} ${agent.name}${identity(task)}, ${executionStatus(task)}. Start ${timestamp(Date.parse(task.startedAt))}. ${task.endedAt ? `End ${timestamp(Date.parse(task.endedAt))}` : `In flight at snapshot ${timestamp(layout.end)}`}.`;
       bar.title = description;
       bar.setAttribute("aria-label", description);
       area.append(bar);
@@ -138,10 +159,10 @@ export function mountFloor(preview, container, taskCard) {
     follow.setAttribute("aria-pressed", "false");
     viewport.scrollBy({ left: -Math.max(200, viewport.clientWidth / 2) });
   }), follow, zoomOut, zoomLabel, zoomIn,
-  node("span", "floor-legend", "▶ Running · ✓ Succeeded · × Failed · ◇ Awaiting review · — Cancelled · O Orchestrator / S Subagent"),
+  node("span", "floor-legend", "▶ Running · ✓ Finished · × Failed · ◇ Awaiting review · — Cancelled · ! Interrupted · O Orchestrator turn / S Subagent attempt"),
   node("span", "floor-legend floor-selection-key", "Selected"));
   const note = node("p", "floor-note small text-body-secondary m-0 p-2",
-    `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Status text/markers: green = succeeded, amber = running or awaiting review, red = failed, gray = cancelled. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
+    `TEST snapshot: ${timestamp(layout.end)}. Bars show execution lifetimes, not CPU activity. Finished is not verified success or result acceptance. Review time does not extend execution bars. Blue fill = selected. Up to 3 parallel subrows per job; select a job for all tasks.`);
   panel.append(inspector, controls, viewport, note);
   container.append(panel);
   function resize() {

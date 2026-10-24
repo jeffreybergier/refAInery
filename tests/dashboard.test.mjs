@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { duration, tokenPoints } from "../source/public/preview.js";
+import { duration, tokenPoints, executionLabel, reviewLabel, usageLabel } from "../source/public/preview.js";
 import { timelineLayout } from "../source/public/floor.js";
 
 const task = (id, stage, status, startedAt, endedAt = null) => ({ id, stage, status, startedAt, endedAt });
@@ -49,6 +49,24 @@ test("durations use the frozen snapshot, not the viewer's clock", () => {
   assert.equal(duration(task("running", 0, "running", "2026-10-23T13:20:00Z"), "2026-10-23T13:30:00Z"), "10m 0s elapsed");
   assert.equal(duration(task("done", 0, "completed", "2026-10-23T13:20:00Z", "2026-10-23T13:22:04Z"), "2026-10-23T14:00:00Z"), "2m 4s");
   assert.equal(duration(task("queued", 0, "queued", null), "2026-10-23T13:30:00Z"), "Not started");
+});
+
+test("inspector distinguishes execution identity, review, and unknown usage", () => {
+  assert.equal(executionLabel({ kind: "subagent" }), "Attempt not recorded");
+  assert.equal(executionLabel({ kind: "subagent", details: { attemptNumber: 2 } }), "Attempt 2");
+  assert.equal(executionLabel({ kind: "orchestrator", details: { turnId: "turn-3" } }), "Orchestrator turn turn-3");
+  assert.equal(reviewLabel({ status: "completed" }), "Not recorded");
+  assert.equal(reviewLabel({ status: "awaiting-review" }), "Pending");
+  assert.equal(reviewLabel({ details: { review: "rejected" } }), "Rejected");
+  assert.equal(usageLabel(null), "Unavailable");
+  assert.equal(usageLabel({ input: 0, output: null, cachedInput: 0, coverage: "partial" }),
+    "0 input / Unknown output · 0 cached input (subset) · partial");
+});
+
+test("review waiting does not extend execution lifetime", () => {
+  const execution = task("review", 0, "awaiting-review", at(0), at(5));
+  assert.equal(timelineLayout([{ tasks: [execution] }], at(20)).runs[0].executions[0].width, .25);
+  assert.equal(duration(execution, at(20)), "5m 0s");
 });
 
 test("token chart uses actual time spacing and handles empty, single, and zero samples", () => {

@@ -36,7 +36,7 @@ function choice(value: unknown, choices: string[]): string {
   return result;
 }
 function status(value: unknown): string {
-  return choice(value, ["queued", "running", "awaiting-review", "completed", "failed", "cancelled"]);
+  return choice(value, ["queued", "running", "awaiting-review", "completed", "failed", "cancelled", "interrupted"]);
 }
 function count(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
@@ -84,6 +84,59 @@ async function transcriptPath(directory: string, transcriptId: string) {
   return path;
 }
 
+// Optional v2 inspector metadata. Missing observations remain unknown; this
+// fixture contract is deliberately separate from production checkpoints.
+function executionDetails(value: unknown, status: string, kind: string,
+  startedAt: string | null, endedAt: string | null, asOf: string) {
+  const data = value === undefined ? {} : object(value);
+  const optionalText = (key: string) => data[key] == null ? null : text(data[key]);
+  const optionalId = (key: string) => data[key] == null ? null : id(data[key]);
+  const optionalTime = (key: string) => data[key] == null ? null : timestamp(data[key]);
+  const taskId = optionalId("taskId");
+  const turnId = optionalId("turnId");
+  const attemptNumber = data.attemptNumber == null ? null : count(data.attemptNumber);
+  if ((attemptNumber !== null && (!taskId || attemptNumber < 1)) ||
+      (kind === "orchestrator" && (taskId || attemptNumber !== null)) ||
+      (kind === "subagent" && turnId)) {
+    throw new Error("Invalid execution identity.");
+  }
+  const review = data.review == null ? "unknown" : choice(data.review,
+    ["unknown", "not-submitted", "pending", "accepted", "rejected", "not-applicable"]);
+  const queuedAt = optionalTime("queuedAt");
+  const reviewedAt = optionalTime("reviewedAt");
+  const lastActivityAt = optionalTime("lastActivityAt");
+  if ((queuedAt && queuedAt > (startedAt ?? asOf)) ||
+      (lastActivityAt && (!startedAt || lastActivityAt < startedAt ||
+        lastActivityAt > (endedAt ?? asOf))) ||
+      (["pending", "accepted", "rejected"].includes(review) && !endedAt) ||
+      (status === "awaiting-review" && !["unknown", "pending"].includes(review)) ||
+      (reviewedAt && (!endedAt || reviewedAt < endedAt || reviewedAt > asOf ||
+        !["accepted", "rejected"].includes(review)))) {
+    throw new Error("Invalid review or observation timing.");
+  }
+  let usage = null;
+  if (data.usage != null) {
+    const source = object(data.usage);
+    const counter = (key: string) => source[key] == null ? null : count(source[key]);
+    usage = { input: counter("input"), output: counter("output"),
+      cachedInput: counter("cachedInput"),
+      coverage: choice(source.coverage, ["partial", "final", "unavailable"]) };
+    if ((usage.input !== null && usage.cachedInput !== null && usage.cachedInput > usage.input) ||
+        (usage.coverage === "unavailable" &&
+          [usage.input, usage.output, usage.cachedInput].some((value) => value !== null))) {
+      throw new Error("Invalid normalized usage.");
+    }
+  }
+  return { taskId, turnId, attemptNumber, sessionId: optionalId("sessionId"),
+    review, queuedAt, reviewedAt, lastActivityAt, usage,
+    activity: optionalText("activity"), model: optionalText("model"),
+    provider: optionalText("provider"), summary: optionalText("summary"),
+    reason: optionalText("reason"), retryReason: optionalText("retryReason"),
+    configuration: optionalText("configuration"), toolPolicy: optionalText("toolPolicy"),
+    // Labels only: never turn arbitrary fixture paths into downloadable links.
+    artifacts: data.artifacts == null ? [] : list(data.artifacts).map(text) };
+}
+
 /** Read-only presentation fixtures, NOT production schemas or checkpoints.
  * Only explicitly selected fields are sent to the browser.
  */
@@ -124,20 +177,25 @@ export async function loadPreview(directories: PreviewDirectories) {
           (startedAt && startedAt > asOf) ||
           (taskStatus === "queued" && (startedAt || endedAt)) ||
           (taskStatus === "running" && (!startedAt || endedAt)) ||
-          (["completed", "failed", "awaiting-review"].includes(taskStatus) && (!startedAt || !endedAt)) ||
+          (["completed", "failed", "awaiting-review", "interrupted"].includes(taskStatus) && (!startedAt || !endedAt)) ||
           (taskStatus === "cancelled" && startedAt && !endedAt)) {
         throw new Error("Execution timestamps do not match the status.");
       }
       const transcriptId = task.transcriptId === null ? null : id(task.transcriptId);
       if (transcriptId && !endedAt) throw new Error("Only finished executions can have transcripts.");
+      const kind = choice(task.kind, ["orchestrator", "subagent"]);
       return {
         id: id(task.id), agentId, title: text(task.title), status: taskStatus,
-        kind: choice(task.kind, ["orchestrator", "subagent"]),
+        kind, details: executionDetails(task.details, taskStatus, kind, startedAt, endedAt, asOf),
         stage: count(task.stage), startedAt, endedAt, transcriptId,
         transcriptUrl: transcriptId ? `/preview/transcripts/${transcriptId}.html` : null,
       };
     });
     unique(tasks.map((task) => task.id));
+    unique(tasks.filter((task) => task.details.attemptNumber !== null)
+      .map((task) => `${task.details.taskId}:${task.details.attemptNumber}`));
+    unique(tasks.filter((task) => task.details.turnId !== null)
+      .map((task) => task.details.turnId!));
     return {
       id: id(run.id), title: text(run.title), summary: text(run.summary),
       status: status(run.status), tasks,

@@ -56,6 +56,75 @@ test("preview returns only display fields and never changes fixtures", async (t)
   assert.equal(await readFile(path, "utf8"), before);
 });
 
+test("optional inspector metadata is allowlisted and preserves unknown counters", async (t) => {
+  const fixture = await fixtures(t);
+  const task = fixture.storage.runs[0].tasks[0];
+  task.details = { taskId: "logical", attemptNumber: 2, review: "not-submitted",
+    model: "sample", provider: "local", activity: "Running bash",
+    lastActivityAt: "2026-10-23T13:29:57Z", artifacts: ["report.txt"],
+    usage: { input: 0, output: null, cachedInput: 0, coverage: "partial" },
+    secret: "NEVER EXPOSE" };
+  await fixture.save();
+  const details = (await loadPreview(fixture.directories)).runs[0].tasks[0].details;
+  assert.equal(details.attemptNumber, 2);
+  assert.deepEqual(details.usage, task.details.usage);
+  assert.deepEqual(details.artifacts, ["report.txt"]);
+  assert.equal(details.secret, undefined);
+  assert.equal(details.sessionId, null);
+});
+
+test("invalid inspector identities, times, reviews and usage fail closed", async (t) => {
+  const fixture = await fixtures(t);
+  const task = fixture.storage.runs[0].tasks[0];
+  for (const details of [
+    { attemptNumber: 1 }, { taskId: "logical", attemptNumber: 0 },
+    { turnId: "turn" }, { review: "accepted" }, { review: "invented" },
+    { lastActivityAt: "2026-10-23T13:31:00Z" },
+    { lastActivityAt: "2026-10-23T13:19:00Z" },
+    { queuedAt: "2026-10-23T13:21:00Z" },
+    { reviewedAt: "2026-10-23T13:25:00Z" },
+    { usage: { input: -1, coverage: "partial" } },
+    { usage: { input: 1, cachedInput: 2, coverage: "final" } },
+    { usage: { input: 0, coverage: "unavailable" } },
+    { artifacts: [123] },
+  ]) {
+    task.details = details;
+    await fixture.save();
+    await assert.rejects(loadPreview(fixture.directories));
+  }
+});
+
+test("finished execution and rejected result remain independent", async (t) => {
+  const fixture = await fixtures(t);
+  const task = fixture.storage.runs[0].tasks[0];
+  task.status = "completed";
+  task.endedAt = "2026-10-23T13:25:00Z";
+  task.details = { review: "rejected", reviewedAt: "2026-10-23T13:27:00Z",
+    queuedAt: "2026-10-23T13:19:00Z", lastActivityAt: task.endedAt };
+  fixture.storage.operations.state = "idle";
+  await fixture.save();
+  const execution = (await loadPreview(fixture.directories)).runs[0].tasks[0];
+  assert.equal(execution.status, "completed");
+  assert.equal(execution.details.review, "rejected");
+  assert.equal(execution.endedAt, "2026-10-23T13:25:00Z");
+  task.status = "awaiting-review";
+  await fixture.save();
+  await assert.rejects(loadPreview(fixture.directories));
+});
+
+test("attempt history retains interrupted executions and rejects duplicate attempt identities", async (t) => {
+  const fixture = await fixtures(t);
+  const task = fixture.storage.runs[0].tasks[0];
+  task.details = { taskId: "logical", attemptNumber: 2 };
+  fixture.storage.runs[0].tasks.push({ ...task, id: "previous", status: "interrupted",
+    endedAt: "2026-10-23T13:25:00Z", details: { taskId: "logical", attemptNumber: 1 } });
+  await fixture.save();
+  assert.equal((await loadPreview(fixture.directories)).runs[0].tasks[1].status, "interrupted");
+  fixture.storage.runs[0].tasks[1].details.attemptNumber = 2;
+  await fixture.save();
+  await assert.rejects(loadPreview(fixture.directories));
+});
+
 test("edits become visible on the next request without restart", async (t) => {
   const fixture = await fixtures(t);
   const origin = await listen(t, fixture.directories);

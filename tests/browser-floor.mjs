@@ -28,6 +28,15 @@ try {
     runs: Array.from({ length: 10 }, (_, index) => ({ id: `run-${index}`, title: `Job ${index}`,
       summary: "Example job", status: "running", tasks: [0, 1, 2, 3, 4].map(task) })),
   };
+  storage.runs[0].tasks[1].details = { taskId: "logical-task", attemptNumber: 2,
+    review: "not-submitted", activity: "Running bash (sample)",
+    model: "sample-model", provider: "sample-provider",
+    lastActivityAt: "2026-10-23T13:29:57Z", retryReason: "Previous attempt interrupted",
+    usage: { input: 1200, output: null, cachedInput: 0, coverage: "partial" },
+    artifacts: ["<script>not executable</script>"], sessionId: "sample-session" };
+  storage.runs[0].tasks[4] = { ...task(4), status: "interrupted",
+    endedAt: "2026-10-23T13:10:00Z", details: { taskId: "logical-task", attemptNumber: 1,
+      reason: "Worker disconnected", review: "not-submitted" } };
   storage.runs[0].tasks.push({ ...task(5), status: "queued", startedAt: null });
   storage.runs[1].tasks[0] = { ...task(0), status: "completed",
     endedAt: "2026-10-23T13:10:00Z", transcriptId: "sample" };
@@ -134,6 +143,19 @@ try {
   await page.keyboard.press("Enter");
   assert.match(await page.locator(".floor-inspector").innerText(), /Execution 1/);
   await assertSelected(page.locator(".floor-bar").nth(1));
+  const inspectorText = await page.locator(".floor-inspector").innerText();
+  assert.match(inspectorText, /Attempt 2/i);
+  assert.match(inspectorText, /Running bash \(sample\)/);
+  assert.match(inspectorText, /sample-model \/ sample-provider/);
+  assert.match(inspectorText, /1,200 input \/ Unknown output/);
+  assert.match(inspectorText, /3s before snapshot \(not a heartbeat\)/);
+  await page.locator(".floor-inspector summary").filter({ hasText: "Artifacts" }).click();
+  assert.equal(await page.locator(".floor-inspector script").count(), 0);
+  assert.match(await page.locator(".floor-inspector").innerText(), /<script>not executable<\/script>/);
+  await page.getByText("Attempt history", { exact: true }).click();
+  await page.getByRole("button", { name: /Execution 4 · Attempt 1/ }).click();
+  assert.match(await page.locator(".floor-inspector").innerText(), /Interrupted/);
+  assert.match(await page.locator(".floor-inspector").innerText(), /Worker disconnected/);
   assert.equal(await height(), initialHeight);
   await page.locator(".floor-bar.status-completed").click();
   await assertSelected(page.locator(".floor-bar.status-completed"));

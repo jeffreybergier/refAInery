@@ -2,7 +2,8 @@ import { mountFloor, disposeFloor } from "./floor.js";
 
 const labels = {
   running: "Running", queued: "Queued", "awaiting-review": "Awaiting review",
-  completed: "Succeeded", failed: "Failed", cancelled: "Cancelled",
+  completed: "Finished", failed: "Failed", cancelled: "Cancelled",
+  interrupted: "Interrupted",
 };
 const number = (value) => value.toLocaleString("en-US");
 const clock = (value) => value.slice(11, 16);
@@ -146,11 +147,33 @@ function renderTokens(samples) {
   }
 }
 
+export function executionLabel(task) {
+  const details = task.details ?? {};
+  if (task.kind === "orchestrator") return details.turnId
+    ? `Orchestrator turn ${details.turnId}` : "Orchestrator · Turn not recorded";
+  return details.attemptNumber ? `Attempt ${details.attemptNumber}` : "Attempt not recorded";
+}
+
+export function reviewLabel(task) {
+  const review = task.details?.review;
+  if ((!review || review === "unknown") && task.status === "awaiting-review") return "Pending";
+  return { pending: "Pending", accepted: "Accepted", rejected: "Rejected",
+    "not-submitted": "Not submitted", "not-applicable": "Not applicable" }[review] ?? "Not recorded";
+}
+
+export function usageLabel(usage) {
+  if (!usage || usage.coverage === "unavailable") return "Unavailable";
+  const counter = (value) => value == null ? "Unknown" : number(value);
+  return `${counter(usage.input)} input / ${counter(usage.output)} output · ` +
+    `${counter(usage.cachedInput)} cached input (subset) · ${usage.coverage}`;
+}
+
 function taskCard(task, agents, asOf) {
   const agent = agents.find((agent) => agent.id === task.agentId);
   const card = element("article", `execution-card ${task.status === "running" ? "is-running" : ""}`);
   const header = element("div", "d-flex justify-content-between align-items-center gap-2 mb-3");
-  header.append(element("span", "eyebrow mb-0", task.kind), badge(task.status));
+  header.append(element("span", "eyebrow mb-0", executionLabel(task)),
+    badge(task.status === "awaiting-review" ? "completed" : task.status));
   card.append(header, element("h4", "h6 mb-1", agent.name),
     element("p", "small text-body-secondary mb-3", agent.role),
     element("p", "task-title mb-3", task.title));
@@ -159,6 +182,35 @@ function taskCard(task, agents, asOf) {
     ? `${formatTime(task.startedAt)} → ${task.endedAt ? formatTime(task.endedAt) : "In flight"} · ${duration(task, asOf)}`
     : "Not started";
   card.append(element("p", "execution-time mb-3", timing));
+  const details = task.details ?? {};
+  const fields = element("dl", "execution-details small");
+  const field = (label, value) => fields.append(element("dt", "", label),
+    element("dd", "", value));
+  field("Result review", reviewLabel(task));
+  field("Activity", details.activity ?? (task.status === "running" ? "Not reported" : "No active execution"));
+  field("Model / provider", `${details.model ?? "Not recorded"} / ${details.provider ?? "Not recorded"}`);
+  field("Last activity", details.lastActivityAt ?
+    `${formatTime(details.lastActivityAt)} · ${Math.floor((Date.parse(asOf) - Date.parse(details.lastActivityAt)) / 1000)}s before snapshot (not a heartbeat)` : "Not recorded (not a heartbeat)");
+  field("Usage", usageLabel(details.usage));
+  if (details.queuedAt) field("Queued", formatTime(details.queuedAt));
+  if (details.reviewedAt) field("Reviewed", formatTime(details.reviewedAt));
+  if (details.reason) field("Outcome / waiting reason", details.reason);
+  if (details.retryReason) field("Retry reason", details.retryReason);
+  if (details.summary) field("Result summary", details.summary);
+  card.append(fields);
+  const artifacts = element("details", "small mb-2");
+  artifacts.append(element("summary", "", `Artifacts (${details.artifacts?.length ?? 0} recorded)`));
+  const artifactList = element("ul", "");
+  for (const artifact of details.artifacts ?? []) artifactList.append(element("li", "", artifact));
+  artifacts.append(artifactList, element("p", "text-body-secondary", "Fixture labels only; artifact downloads are not implemented."));
+  const diagnostics = element("details", "small mb-2");
+  diagnostics.append(element("summary", "", "Identity and configuration"));
+  for (const [label, value] of [["Execution", task.id], ["Task", details.taskId],
+    ["Turn", details.turnId], ["Pi session", details.sessionId],
+    ["Configuration snapshot", details.configuration], ["Tool policy", details.toolPolicy]]) {
+    diagnostics.append(element("p", "mb-1", `${label}: ${value ?? "Not recorded"}`));
+  }
+  card.append(artifacts, diagnostics);
   if (task.transcriptUrl) {
     const link = element("a", "transcript-link", "View sample transcript ↗");
     link.href = task.transcriptUrl;
