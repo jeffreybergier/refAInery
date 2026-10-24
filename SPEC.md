@@ -39,9 +39,11 @@ collaboration are called out explicitly.
 - A launcher and Hello World server exist. The workflow and storage design
   below is agreed direction, not a claim that those features are implemented.
   This phase documents that design; implementation is separate.
-- Prompts start an orchestrator agent, which defines a basic directed acyclic
-  graph (DAG) of subagent tasks. A scheduler executes eligible tasks, and all
-  results return to the orchestrator for decisions about subsequent work.
+- Prompt-based work requests enter a FIFO queue. One top-level run is active
+  at a time, with one orchestrator that makes a plan and launches one subagent
+  at a time. Every subagent returns a handover to that orchestrator; only the
+  orchestrator decides what runs next or whether the work is done. See section
+  6.13 for the agreed v1 execution loop and handover format.
 - Storage uses JSON workflow checkpoints, opaque Pi conversation files, and
   HTML historical reports. The storage repository is managed inside the
   container on a persistent named volume, not a host checkout bind mount.
@@ -174,10 +176,11 @@ commit, and synchronization policies remain open; no automatic push is assumed.
 
 ### 6.4 Storage layout and ownership
 
-Distinguish four identities:
+Distinguish these identities:
 
-- **Run:** one user request and the orchestration performed to fulfill it.
-- **Task:** one logical node in the DAG.
+- **Request:** one incoming prompt-based work item, independent of execution.
+- **Run:** the orchestration performed to fulfill one request.
+- **Task:** one assigned part of the orchestrator's plan.
 - **Attempt:** one execution of a task; retries create new attempts and retain
   earlier outcomes.
 - **Inference request:** one actual model invocation, including orchestrator
@@ -261,8 +264,10 @@ before implementation. A transcript alone is not a scheduler recovery record.
 
 Use numbered, immutable JSON snapshots of complete workflow control state.
 The highest committed, valid revision is authoritative; older revisions retain
-transition history. Do not maintain independently authoritative queue, DAG,
-inbox, and task-status files. Indexes and UI caches must be rebuildable.
+transition history. Do not maintain independently authoritative copies of a
+run's plan, inbox, and task statuses. Indexes and UI caches must be rebuildable.
+The durable intake queue contract remains to be defined separately from run
+checkpoints; section 6.13 establishes its scheduling behavior.
 Workflow checkpoints govern scheduling and result acceptance; the independent
 usage ledger in section 6.12 governs consumption. Neither substitutes for the
 other. Consumed tokens count even if a task fails or its result is rejected.
@@ -273,7 +278,7 @@ Each checkpoint records:
 - Run status, optional parent run, and final outcome when terminal.
 - Workflow/application version, configuration snapshot identity, model
   configuration, tool policy, and limits.
-- DAG revision, task definitions, and dependencies.
+- Plan revision, task definitions, and their ordering or prerequisites.
 - Attempt statuses, worker identities, timestamps, and Pi session references.
 - Result references and their delivery and acceptance states.
 - Current orchestrator turn, pending result IDs, and applied decisions.
@@ -293,19 +298,21 @@ checkpoint or a missing referenced file requires explicit recovery; do not
 silently roll back to older state and potentially repeat actions. Unreferenced
 files from an interrupted transition are not proof that work was accepted.
 
-Allow only one scheduler/workflow-state writer per storage directory. Subagents
-may run concurrently, but submit workflow changes through that writer rather
-than editing checkpoint files. Their separate Pi session files remain owned by
+Allow only one scheduler/workflow-state writer per storage directory. V1 runs
+one subagent at a time, with workflow changes submitted through that writer
+rather than by editing checkpoint files. Their separate Pi session files remain owned by
 the respective agent sessions. Locks must prevent overlapping writers across
 containers; stale ownership recovery must not rely on a PID alone.
 
 ### 6.6 Result delivery, recovery, and archival
 
-Subagent results always return to the orchestrator. A successful attempt does
-not by itself satisfy a DAG dependency: the orchestrator must accept its result
-before dependent tasks become eligible. Results include stable result, task,
-and attempt IDs; outcome; summary; structured output; artifact references; and
-error details when applicable. Failures and cancellations also return outcomes.
+Subagent results always return to the orchestrator. Finishing an attempt does
+not itself authorize subsequent work: the orchestrator reviews its handover and
+commits a decision before another subagent starts. Results include stable
+result, task, and attempt IDs; outcome; the handover reference and stop reason;
+summary; structured output; artifact references; and error details when
+applicable. Failures and cancellations also return outcomes. An interruption
+without a handover is recorded explicitly, not filled with an invented document.
 
 Persist result handling through these stages:
 
@@ -313,12 +320,12 @@ Persist result handling through these stages:
 2. Result included in a recorded orchestrator turn.
 3. Orchestrator decision committed with the resulting workflow-state change.
 
-Serialize orchestrator turns even when subagents run concurrently. Persist
+Serialize orchestrator turns and launch at most one subagent at a time. Persist
 inputs before dispatch and decisions before applying subsequent actions. Stable
 result and decision IDs prevent duplicate application during recovery. The
-orchestrator may accept, reject, retry, or add work. New dependencies may affect
-unstarted tasks only; reject cycles and preserve executed task definitions.
-Represent revision work as new nodes rather than rewriting execution history.
+orchestrator may accept, reject, retry, revise its plan, or add work. Preserve
+executed task definitions; represent revision work as new tasks rather than
+rewriting execution history. Subagents never create other subagents.
 
 On recovery, reconcile incomplete turns and recorded results, and mark attempts
 whose workers are gone as interrupted. Never assume a recorded running state
@@ -343,7 +350,7 @@ inputs, results, configuration snapshots, artifacts, and Pi JSONL alongside
 Make report generation and archival restartable, using a same-volume directory rename and recovery
 logic that recognizes both active and archived terminal runs.
 
-Reports show the request, outcome, DAG, decisions, attempts, retries, failures,
+Reports show the request, outcome, plan, decisions, attempts, retries, failures,
 interruptions, artifacts, timing, and available usage information. Individual
 Pi HTML exports may supplement the overall report. Escape untrusted text and
 sanitize permitted markup; never execute generated agent HTML in the report.
@@ -438,14 +445,15 @@ configuration. JSON schemas and validation code belong in the application
 repository, which owns the contract and its supported versions.
 
 `config.json` declares a schema version, default workflow and orchestrator type,
-scheduler concurrency, named model profiles, and explicitly approved extension
+scheduler settings constrained to v1's sequential execution, named model
+profiles, and explicitly approved extension
 registrations. Agent definitions declare stable IDs, descriptions, ordered
 instruction files, model profiles, requested policy/tool profiles, selected
 extensions and skills, execution limits, and expected result-schema references.
 Start with explicit definitions and shared instruction files, not inheritance.
 
 Workflow definitions select allowed agent types, defaults, and limits; the
-orchestrator's actual DAG belongs in persisted run state. Scheduling, checkpoint
+orchestrator's actual plan belongs in persisted run state. Scheduling, checkpoint
 commits, result delivery, dependency acceptance, recovery, and approval
 mechanics remain application code, not configurable replacements for those
 mechanisms. Tasks may narrow, but never expand, approved agent permissions.
@@ -821,6 +829,108 @@ records contain no prompt or response content. Ledger compaction requires a
 separate auditable design preserving totals, coverage, and provenance; deleting
 ledger records while retaining only dashboard totals is not supported.
 
+### 6.13 V1 intake, sequential orchestration, and handover
+
+#### Intake and FIFO scheduling
+
+All intake sources produce a common prompt-based work request. The initial
+minimum fields are `id`, `prompt`, `receivedAt`, and `source`; the initial source
+is `manual`. Other sources may be added later without defining integrations now.
+A request preserves what was asked and where it came from; it is not itself an
+execution. A run records execution of that request.
+
+Incoming top-level requests enter a FIFO queue. When the factory is free, the
+scheduler automatically starts the oldest queued request. V1 has one active
+run at a time, without priorities, scheduled start times, or a separate manual
+approval to start. This does not bypass approval requirements for consequential
+actions performed during the run.
+
+All subwork belongs to the active run and takes precedence over the next queued
+request. It never joins the back of the intake queue. The next request starts
+only after the current run completes, fails, or is cancelled and its workers
+have stopped. Durable queue records, tie-breaking, and the atomic transition
+from queued request to active run remain schema implementation work.
+
+#### Orchestrator-owned execution loop
+
+Each run has one orchestrator, which stays responsible for the request until
+completion, failure, or cancellation:
+
+1. The orchestrator receives the request and makes a plan.
+2. It launches one subagent to perform the first assigned part of the plan.
+3. The subagent works until its assignment finishes or it reaches the context
+   handover boundary, intended to be Pi's request to compact context.
+4. The subagent writes a handover document and stops, returning control to the
+   orchestrator rather than silently continuing through compaction.
+5. The orchestrator reviews the handover, updates its plan, and decides whether
+   to launch another subagent or declare the original work done.
+6. Repeat until the run is terminal, then advance the top-level FIFO queue.
+
+Only the orchestrator creates subagents. Subagents cannot delegate or pass
+control directly to another subagent. There is at most one active subagent;
+this replaces the earlier general DAG/concurrent-subagent proposal. Subwork is
+scheduled within the current run after the orchestrator's decision, not in
+parallel or automatically from a subagent's recommendations. A subagent finishing
+does not establish completion or correctness of the overall request.
+
+The pinned Pi integration must be verified before implementing the context
+boundary: in particular, whether compaction can be intercepted and sufficient
+context reserved to request and persist the handover. This specification records
+the desired behavior, not a claim that those hooks have been verified.
+
+#### V1 handover document
+
+Use the following Markdown format for both completed assignments and
+context-limit handovers, retaining the file-list tags:
+
+```markdown
+## Goal
+[What the user is trying to accomplish]
+
+## Constraints & Preferences
+- [Requirements mentioned by user]
+
+## Progress
+### Done
+- [x] [Completed tasks]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues, if any]
+
+## Key Decisions
+- **[Decision]**: [Rationale]
+
+## Next Steps
+1. [What should happen next]
+
+## Critical Context
+- [Data needed to continue]
+
+<read-files>
+path/to/file1.ts
+path/to/file2.ts
+</read-files>
+
+<modified-files>
+path/to/changed.ts
+</modified-files>
+```
+
+Keep the producing subagent attempt identity and stop reason (`completed` or
+`context-limit`) in application bookkeeping outside the document. Retain the
+handover as an immutable file referenced by the attempt's result; its precise
+filename and record schema remain to be defined. The Next Steps section is
+advice for the orchestrator, not automatically scheduled work. File lists are
+agent-reported context, not an independently verified workspace change audit.
+
+If a subagent crashes or is interrupted before producing a handover, record
+that interruption and the absent handover explicitly. Do not invent a handover
+or label the attempt completed. Existing conservative recovery and approval
+rules apply before further work is dispatched.
+
 ## 7. Proposed logical architecture
 
 Keep the first implementation separable into these responsibilities. These are
@@ -860,10 +970,11 @@ A first workflow could follow this sequence:
 3. refAInery constructs a run with a unique identifier and a clear output
    location, validates its configuration, and commits an immutable configuration
    snapshot before dispatching work.
-4. A Pi-backed orchestrator plans a DAG of subagent tasks. The scheduler runs
-   eligible attempts using only configured tools and workspace permissions.
-   Every result returns to the orchestrator; accepted results unlock dependent
-   work, and committed decisions determine retries, new tasks, or completion.
+4. The FIFO scheduler starts one top-level run. Its Pi-backed orchestrator makes
+   a plan and launches one subagent at a time, using only configured tools and
+   workspace permissions. Each subagent returns a handover on completion or at
+   the context handover boundary. The orchestrator reviews it and commits the
+   decision to launch further work or finish; subagents cannot delegate.
 5. refAInery reports progress and requests approval before any action defined
    as approval-gated.
 6. The operator reviews the result, requested changes, and relevant run details.
@@ -974,7 +1085,13 @@ These criteria are provisional until the first workflow is chosen:
 - Economic tests cover historical versus current repricing, absent mappings or
   rates, cache assumptions, decimal rounding, currency handling, and excluded
   operating costs. Estimates and incomplete coverage are visible in the UI.
-- Downstream tasks wait for orchestrator acceptance of dependency results.
+- Top-level requests start FIFO, with at most one active run and one subagent.
+  Only the orchestrator creates subagents; all subwork returns to it before
+  further dispatch. The next queued request waits until the active run and its
+  workers have stopped.
+- Subagents persist the agreed handover on completion or at the verified Pi
+  context handover boundary. Missing handovers after interruption remain
+  explicit; recommendations never schedule work without an orchestrator decision.
 - Terminal runs retain machine-readable records alongside regenerable HTML
   reports; reports render agent and tool content as untrusted data.
 - The default tool permissions and any approval steps are documented and
@@ -1048,7 +1165,7 @@ These criteria are provisional until the first workflow is chosen:
 | D-009 | JSON workflow checkpoints, opaque Pi sessions, and HTML reports retaining underlying records | Confirmed; detailed schema and retention TBD |
 | D-010 | 1Password item/field names and mapping to container environment variables | Open |
 | D-011 | Clone storage inside the container on first use; reuse checkout on named volume at `/app/storage`, not a host checkout bind mount | Confirmed; launcher change pending |
-| D-012 | Orchestrator plans a DAG; scheduler runs subagents; all results return for orchestrator acceptance | Confirmed |
+| D-012 | FIFO top-level requests; one active run whose orchestrator plans and launches one subagent at a time; all subwork returns to that orchestrator before further dispatch | Confirmed; replaces general DAG/concurrent scheduling |
 | D-013 | One workflow-state writer, immutable checkpoints, conservative crash recovery | Confirmed; recovery automation policy TBD |
 | D-014 | Immutable archived runs; continuations create linked new runs | Confirmed |
 | D-015 | Private `refAInery-config` checkout at `/app/config` on a separate named volume; explicit updates preserve development edits | Confirmed; implementation pending |
@@ -1059,3 +1176,5 @@ These criteria are provisional until the first workflow is chosen:
 | D-020 | Independent immutable per-inference accounting ledger; per-model/per-machine odometer with explicit unknown usage; summaries are rebuildable | Confirmed; implementation pending |
 | D-021 | Versioned pricing and comparison policies; cloud-equivalent spend and purchase-price recovery are estimates separate from measured usage | Confirmed; implementation pending |
 | D-022 | Attempt/turn-aware Factory Floor inspector; execution completion separate from result acceptance; explicit telemetry sources and unavailable coverage | Preview implemented; production Pi adapter pending |
+| D-023 | Common prompt-based intake request with ID, received time, and source; request identity separate from execution | Confirmed; detailed queue schema pending |
+| D-024 | Subagents hand back the agreed Markdown document on completion or context limit; only the orchestrator decides continuation or completion | Confirmed; Pi compaction interception requires verification |
