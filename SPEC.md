@@ -11,7 +11,29 @@ refAInery is a Node.js/TypeScript application with a dark Bootstrap dashboard.
 It currently displays fictional, read-only fixtures, not real agent activity.
 Pi integration and production orchestration are not implemented.
 
-The dashboard has three sections:
+`/` redirects to `/v1`. `/v1` displays storage-v1 request intake; `/v2`
+preserves the original execution-oriented test dashboard. Both remain read-only.
+
+### Storage-v1 dashboard
+
+The v1 page shows request identity, original prompt (including whitespace), UTC
+receipt time, manual source, schema version, and count of records in the fixture
+collection. Receipt sorting is only for browsing, not a dispatch queue. No queue
+membership, run identity, execution status, or outcome is inferred from intake.
+
+Factory state, active/queued/finished/failed counts, subagent outcomes, token
+history, execution timeline/inspector, and agent/model configuration remain
+explicit unavailable placeholders. Missing data is not zero, idle, or success.
+
+Test mode loads the bundled `source/fixtures/requests-v1.json` array through
+`/api/v1/preview`; every element is a schema-compliant request. The array is a
+presentation container, not a new production storage layout. Fixture validation
+runs on refresh and test startup. Failed refreshes clear stale requests. Production
+mode does not load these fixtures and has no production intake reader or writer.
+
+### Preserved v2 dashboard
+
+The v2 dashboard has three sections:
 
 - **Factory Operations:** simulated factory state, execution/queue counts,
   subagent outcomes, and input/output token history.
@@ -45,8 +67,11 @@ is not execution time, and last activity is not a worker heartbeat.
 - Outside test mode, the dashboard shows empty production states. Production
   configuration/storage loading, live activity, and Pi exports are not implemented.
 
-The fixture format is a presentation contract, **not the production storage
-schema**. Its validation lives in `source/preview.ts` and its tests.
+The v2 fixture format is a presentation contract, **not the production storage
+schema**. Its validation lives in `source/preview.ts` and its tests. Its fictional
+parallel work and per-turn transcript examples are preserved for design reference,
+not claims of compliance with the sequential production workflow below. V1 intake
+fixture validation lives separately in `source/intake-preview.ts`.
 
 ### Running and checking
 
@@ -86,8 +111,9 @@ preserved as received. Receipt time is UTC. The schema README describes exact
 validation requirements, including enabled date-time format assertions.
 
 A request remains unchanged after acceptance. Queue position, run status,
-provider/model selection, and results belong elsewhere. Only this record's schema
-and example exist so far; a production validator/writer is not implemented.
+provider/model selection, and results belong elsewhere. This record's schema,
+example, and read-only dashboard fixtures exist; a production validator/writer
+is not implemented.
 
 ## 3. Queue and orchestration — agreed design, not implemented
 

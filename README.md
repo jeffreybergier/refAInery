@@ -4,7 +4,28 @@ A personal AI workshop with a dark, industrial Bootstrap control room.
 The current dashboard uses fictional, read-only fixtures to design the system
 before Pi or real orchestration is connected.
 
-## Control room
+## Dashboard versions
+
+- `/` redirects to `/v1` (GET and HEAD).
+- `/v1` is the storage-v1 intake dashboard: original request IDs/prompts, UTC
+  receipt times, manual source, schema version, and collection count. Receipt
+  ordering is for browsing, not queue position. No run/task status is inferred.
+- `/v2` preserves the existing execution-oriented design preview described below.
+  Both dashboards link to one another; `/v1/` and `/v2/` redirect to canonical URLs.
+
+In test mode, v1 loads `source/fixtures/requests-v1.json`. The array is only a
+preview container; each element conforms to `schemas/storage/v1/request.schema.json`.
+These bundled fictional records are separate from the sibling v2 storage fixture
+and are available through `/api/v1/preview`. They are revalidated on refresh;
+invalid data clears displayed requests rather than retaining stale data. The
+fixture-only validator is not a production intake validator or writer.
+
+V1 retains explicit unavailable placeholders for factory state, queue/execution
+counts, outcomes, token history, execution timeline/inspector, and agent/model
+configuration. Unknown data is never represented as zero or idle. Production mode
+loads neither set of fixtures and shows honest unconnected states.
+
+## V2 control room
 
 1. **Factory Operations** — simulated Running/Idle/Stopped state; active
    execution, queued task, success, and failure counts; subagent outcome chart;
@@ -63,7 +84,8 @@ Vibing/
 python3 serve.py --test    # optionally: --port 8090
 ```
 
-Open `http://127.0.0.1:8080`. Both modes use the same container launcher,
+Open `http://127.0.0.1:8080` for v1, or `http://127.0.0.1:8080/v2` for the
+preserved dashboard. Both modes use the same container launcher,
 image, executable/Node-version preflight, dependency setup, and shutdown logic.
 No host Node/npm installation is required. Docker (or Podman) must be running.
 
@@ -77,7 +99,8 @@ write API. Invalid or missing fixtures stop startup; invalid edits after startup
 display a preview error. With the image and matching dependencies already cached,
 test startup needs no registry access.
 
-Edit either fixture JSON file and refresh the browser. Simulated running,
+For v1, edit the bundled `source/fixtures/requests-v1.json` and refresh.
+For v2, edit either sibling fixture JSON file and refresh the browser. Simulated running,
 awaiting-review, completed, and failed runs are frozen design examples, not
 live work. All displays are explicitly labeled TEST. Configuration remains
 fixture v1; storage uses fixture v2 for telemetry, execution timing, grouping,
@@ -111,7 +134,8 @@ the orchestrator's model; the orchestrator selects each subagent's model from
 that list. The context window is capacity, not an exact handover trigger; the Pi
 integration must leave room for handover and verify backend support.
 
-Only the request JSON Schema and fictional example are implemented so far:
+The production storage implementation remains limited to the request JSON
+Schema and fictional example (the v1 dashboard adds read-only intake fixtures):
 `schemas/storage/v1/request.schema.json` and `examples/storage/v1/request.json`.
 The production writer, checkpoint/model schemas, and Pi export integration are
 not implemented.
@@ -184,16 +208,22 @@ then run:
 
 ```sh
 PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-floor.mjs
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-intake.mjs
 ```
 
-It uses temporary fixtures and a loopback server to check keyboard selection,
+The intake check covers redirects, fixture rendering, exact prompt whitespace,
+safe text, mobile width, refresh failures, and empty/production states. The floor
+check targets `/v2` and uses temporary fixtures and a loopback server to check keyboard selection,
 computed bar fills/borders and persistent selection after mouse clicks or blur,
 parallel overflow/pending access, zoom/follow, refresh preservation, fixed height,
 mobile page width, and empty/error states. It never changes sibling fixtures.
 
 ## Files
 
-- `source/public/index.html` — responsive Bootstrap page and mobile navigation.
+- `source/public/intake.html` and `intake.js` — storage-v1 intake and unavailable placeholders.
+- `source/intake-preview.ts` — bundled v1 fixture validation and loading (not production intake).
+- `source/fixtures/requests-v1.json` — fictional, schema-compliant intake records.
+- `source/public/index.html` — preserved v2 Bootstrap page and mobile navigation.
 - `source/public/refainery.css` — industrial theme, charts, and timeline layout.
 - `source/server.ts` — explicit public asset routes; no general filesystem root.
 - `source/main.ts` — shared server entry point and explicit mode selection.

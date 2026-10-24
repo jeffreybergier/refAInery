@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#101112">
+    <title>refAInery — Storage v1 intake</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/assets/bootstrap.min.css">
+    <link rel="stylesheet" href="/assets/refainery.css">
+    <script src="/assets/intake.js" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <nav class="container-xl py-3 d-flex flex-wrap align-items-center gap-3" aria-label="Main navigation">
+        <a class="navbar-brand d-flex align-items-center gap-3" href="/v1" aria-label="refAInery home">
+          <span class="brand-mark" aria-hidden="true">r/</span>
+          <span class="wordmark">ref<span>AI</span>nery</span>
+        </a>
+        <a class="nav-link" href="#requests">Requests</a>
+        <a class="nav-link" href="#factory-floor">Factory floor</a>
+        <a class="nav-link" href="/v2">V2 design preview ↗</a>
+        <span class="environment-label ms-md-auto">Storage v1 · Intake only</span>
+      </nav>
+    </header>
+    <main id="main" class="container-xl py-4 py-md-5">
+      <p id="test-notice" class="test-notice mb-4" hidden><strong>TEST INTAKE</strong> / Frozen, fictional requests. No agents or real work are running.</p>
+      <p id="preview-error" class="alert alert-danger" role="alert" hidden></p>
+      <noscript><p class="alert alert-warning">JavaScript is required to load request fixtures.</p></noscript>
+      <section id="operations" aria-labelledby="operations-title">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+          <div><p class="eyebrow accent mb-2">Control room / Storage v1</p><h1 id="operations-title" class="display-6 fw-semibold mb-0">Factory Operations</h1></div>
+          <button id="refresh-preview" class="btn btn-outline-light btn-sm" type="button" hidden>Refresh fixtures</button>
+        </div>
+        <p class="text-body-secondary">V1 records receipt of a request, not what happened afterward. Unknown is not zero, idle, or queued.</p>
+        <div class="row g-3 mb-4">
+          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Requests in this collection</h2><p id="request-count" class="metric-value">—</p><p class="small text-body-secondary mb-0">Intake records only · not queue depth</p></article></div>
+          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Factory state / Active agents</h2><p class="h4">Unavailable</p><p class="small text-body-secondary mb-0">Requires factory control state and execution observations.</p></article></div>
+          <div class="col-md-4"><article class="panel p-4 h-100"><h2 class="eyebrow">Queued / Finished / Failed</h2><p class="h4">Unavailable</p><p class="small text-body-secondary mb-0">Requires queue membership and run/attempt outcomes.</p></article></div>
+        </div>
+        <div class="row g-3">
+          <div class="col-lg-4"><article class="panel p-4 h-100"><h2 class="h5">Subagent outcomes</h2><p class="text-body-secondary mb-0">Unavailable in storage v1. Execution completion and result acceptance need separate records; no success rate can be calculated.</p></article></div>
+          <div class="col-lg-8"><article class="panel p-4 h-100"><h2 class="h5">Tokens over time</h2><p class="text-body-secondary mb-0">Unavailable in storage v1. Requires timestamped input/output usage and coverage information. Context capacity is not token usage.</p></article></div>
+        </div>
+      </section>
+      <section id="requests" class="pt-5" aria-labelledby="requests-title">
+        <h2 id="requests-title" class="h3">Request intake</h2>
+        <p class="text-body-secondary">Original prompts and UTC receipt times. Listed oldest receipt first for browsing, not as a dispatch queue. Requests have no execution status.</p>
+        <p id="requests-state" class="panel p-4 text-body-secondary" role="status">Production intake loading is not implemented. Test mode supplies fictional v1 requests.</p>
+        <div id="request-list" class="d-grid gap-3"></div>
+      </section>
+      <section id="factory-floor" class="pt-5" aria-labelledby="floor-title">
+        <h2 id="floor-title" class="h3">Factory Floor</h2>
+        <div class="panel p-4">
+          <h3 class="h5">Execution timeline unavailable</h3>
+          <p class="text-body-secondary">Receipt times are not execution start times. Runs, orchestrator turns, subagent attempts, and execution start/end times are not defined by the request schema.</p>
+          <h3 class="h5">Execution inspector unavailable</h3>
+          <p class="text-body-secondary mb-0">Attempt/retry history, review decisions and timing, model/provider, activity and last observation, usage, result summaries, artifacts, Pi sessions, transcripts, configuration snapshots, and tool policy require additional records. No handovers or exports exist for these fictional requests.</p>
+        </div>
+      </section>
+      <section id="configuration" class="pt-5" aria-labelledby="configuration-title">
+        <div class="panel p-4">
+          <h2 id="configuration-title" class="specification-heading">Factory Specification</h2>
+          <p>Storage v1 request fields: <code>schemaVersion</code>, <code>id</code>, <code>prompt</code>, <code>receivedAt</code>, <code>source</code>.</p>
+          <p class="text-body-secondary mb-0">Agent definitions and allowed model/provider configuration are outside this schema. No production configuration is loaded. The preserved V2 preview uses its own separate fictional configuration.</p>
+        </div>
+      </section>
+      <footer class="page-footer d-flex flex-wrap justify-content-between gap-2 mt-5 pt-4"><span>refAInery / Storage v1</span><a href="/v2">Preserved V2 dashboard</a></footer>
+    </main>
+  </body>
+</html>

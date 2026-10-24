@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { loadPreview, readPreviewTranscript } from "./preview.ts";
+import { loadIntakePreview } from "./intake-preview.ts";
 import type { PreviewDirectories } from "./preview.ts";
 
 // Explicit routes keep source, configuration, and credentials out of the web root.
 const assets = new Map([
-  ["/", ["./public/index.html", "text/html; charset=utf-8"]],
+  ["/v1", ["./public/intake.html", "text/html; charset=utf-8"]],
+  ["/v2", ["./public/index.html", "text/html; charset=utf-8"]],
+  ["/assets/intake.js", ["./public/intake.js", "text/javascript; charset=utf-8"]],
   ["/assets/refainery.css", ["./public/refainery.css", "text/css; charset=utf-8"]],
   ["/assets/preview.js", ["./public/preview.js", "text/javascript; charset=utf-8"]],
   ["/assets/floor.js", ["./public/floor.js", "text/javascript; charset=utf-8"]],
@@ -35,9 +38,15 @@ export function createAppServer(preview?: PreviewDirectories) {
 
     // No user-supplied path is ever passed to the filesystem.
     const pathname = (request.url ?? "/").split("?")[0];
-    if (pathname === "/api/preview") {
+    if (["/", "/v1/", "/v2/"].includes(pathname)) {
+      response.writeHead(302, { Location: pathname === "/v2/" ? "/v2" : "/v1" });
+      response.end();
+      return;
+    }
+    if (pathname === "/api/preview" || pathname === "/api/v1/preview") {
       try {
-        const data = preview ? await loadPreview(preview) : { mode: "production" };
+        const data = !preview ? { mode: "production" } :
+          pathname === "/api/v1/preview" ? await loadIntakePreview() : await loadPreview(preview);
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         response.end(request.method === "HEAD" ? undefined : JSON.stringify(data));
       } catch {

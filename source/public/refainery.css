@@ -21,6 +21,7 @@ body {
     radial-gradient(ellipse at 85% 5%, #51403326, transparent 48%),
     radial-gradient(ellipse at 0% 65%, #44464b1c, transparent 50%), #101112;
 }
+.request-prompt { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .site-header { background: #141516e8; border-bottom: 1px solid var(--bs-border-color); }
 .wordmark { font-size: 1.5rem; font-weight: 650; letter-spacing: -.055em; }
 .wordmark > span, .accent { color: var(--furnace); }

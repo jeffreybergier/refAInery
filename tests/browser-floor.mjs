@@ -56,7 +56,7 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.goto(`http://127.0.0.1:${server.address().port}/v2`);
   await page.waitForSelector(".floor-bar");
   assert.equal(await page.locator(".floor-lane").count(), 10);
   assert.equal(await page.locator(".floor-bar").count(), 30);

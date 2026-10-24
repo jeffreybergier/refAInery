@@ -17,7 +17,7 @@ after(() => new Promise((resolve, reject) => {
 }));
 
 test("control room uses dark Bootstrap and orders operations, floor, and configuration", async () => {
-  const response = await fetch(origin);
+  const response = await fetch(`${origin}/v2`);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   const page = await response.text();

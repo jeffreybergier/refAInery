@@ -1,0 +1,23 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "request-demo-001",
+    "prompt": "Add a search box to the fictional workshop dashboard.",
+    "receivedAt": "2026-10-24T14:00:00Z",
+    "source": "manual"
+  },
+  {
+    "schemaVersion": 1,
+    "id": "request-demo-002",
+    "prompt": "Review the sample release notes for clarity.\n\nKeep the original technical terminology.",
+    "receivedAt": "2026-10-24T14:05:00Z",
+    "source": "manual"
+  },
+  {
+    "schemaVersion": 1,
+    "id": "request-demo-003",
+    "prompt": "  Draft a short guide to the fictional greenhouse monitor.\nDo not invent sensor readings.  ",
+    "receivedAt": "2026-10-24T14:12:30.125Z",
+    "source": "manual"
+  }
+]

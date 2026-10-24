@@ -137,6 +137,7 @@ test("edits become visible on the next request without restart", async (t) => {
 test("production server does not expose fixtures", async (t) => {
   const origin = await listen(t);
   assert.deepEqual(await (await fetch(`${origin}/api/preview`)).json(), { mode: "production" });
+  assert.deepEqual(await (await fetch(`${origin}/api/v1/preview`)).json(), { mode: "production" });
 });
 
 test("unsupported schemas, production data, duplicate IDs, and bad references fail", async (t) => {
