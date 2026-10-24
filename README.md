@@ -31,7 +31,7 @@ Keep the three repositories beside one another:
 
 ```text
 Vibing/
-  refAInery/          # app and tests/serve.py
+  refAInery/          # app and serve.py
   refAInery-config/
     prod/            # reserved real configuration
     test/config.json # fictional agents and workshop settings
@@ -43,13 +43,11 @@ Vibing/
 
 ```sh
 python3 serve.py --test    # optionally: --port 8090
-# Compatibility alias: python3 tests/serve.py
 ```
 
 Open `http://127.0.0.1:8080`. Both modes use the same container launcher,
 image, executable/Node-version preflight, dependency setup, and shutdown logic.
 No host Node/npm installation is required. Docker (or Podman) must be running.
-`tests/serve.py` is only an alias for `serve.py --test`.
 
 Test mode supplies explicitly fake `GH_TOKEN` and `STORAGE_REPO` environment
 values. It skips 1Password, GitHub authentication, storage cloning, and SDK
@@ -147,5 +145,4 @@ require the sibling repositories. The automated tests do not access
 - `source/preview.ts` — read-only, validated test fixture adapter.
 - `source/public/preview.js` — safe text/SVG rendering and dashboard interactions.
 - `serve.py` — shared container launcher; `--test` selects fictional fixtures.
-- `tests/serve.py` — compatibility alias for `serve.py --test`.
 - `SPEC.md` — intended product architecture and future behavior.

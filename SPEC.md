@@ -491,12 +491,15 @@ and `/app/storage`; production application data is scoped beneath their
 `prod/` directories. The production contracts described above apply within
 those production subdirectories, not to test fixtures.
 
-Before Pi integration, `tests/serve.py` is a maintained fake-data counterpart
-to the root launcher. It starts the same Node application locally using the
-sibling repositories' `test/` directories, without Docker, 1Password, GitHub,
-SDK setup, authentication, or agent execution. No alternate credentials are
-used: this mode needs none. It binds to loopback and does not inherit provider
-credentials or production data settings.
+Before Pi integration, `serve.py --test` starts the same Node application in
+the same development container, using read-only mounts of the sibling
+repositories' `test/` directories. Both modes share the tool/Node preflight,
+dependency installation in the `developer_cache` volume, and shutdown logic.
+Test mode supplies fake credential environment values and skips 1Password,
+GitHub authorization, storage cloning, and SDK installation. It does not run
+agents or mount production data or SDK volumes. The server listens on container
+interfaces, but the published host port is loopback-only; real host credentials
+are not forwarded into the test container.
 
 The configuration fixture contract uses version-1 `test/config.json` for
 fictional agents/workshop settings. Storage fixture version 2 uses
