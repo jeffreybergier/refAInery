@@ -96,6 +96,26 @@ served; symlink escapes and arbitrary paths are rejected. Responses use a
 script-free CSP sandbox with an opaque origin. No agent HTML is embedded into
 the control room. Real Pi export generation is not implemented.
 
+## Agreed production storage design (not implemented)
+
+`SPEC.md` describes the sequential workflow and saved run state. Each subagent
+writes a Markdown handover and stops on completion or at the context boundary.
+The application then exports its Pi session to HTML and saves a checkpoint
+referencing both files before returning control to the orchestrator. The
+orchestrator's session is exported only when the overall run ends, with its HTML
+reference in the final checkpoint. Other checkpoints do not trigger exports.
+
+The allowed provider/model list initially contains one choice, with
+`contextWindow: 250000` fixed in the run's configuration. The application selects
+the orchestrator's model; the orchestrator selects each subagent's model from
+that list. The context window is capacity, not an exact handover trigger; the Pi
+integration must leave room for handover and verify backend support.
+
+Only the request JSON Schema and fictional example are implemented so far:
+`schemas/storage/v1/request.schema.json` and `examples/storage/v1/request.json`.
+The production writer, checkpoint/model schemas, and Pi export integration are
+not implemented.
+
 ## Container launch
 
 ```sh

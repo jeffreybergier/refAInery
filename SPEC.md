@@ -121,6 +121,19 @@ We must verify that boundary and the ability to produce a handover before
 implementing it; automatic continuation through compaction is not the intended
 behavior. A crash without a handover is an interruption, not a completed result.
 
+On each normal handback, including a context-limit handback:
+
+1. The subagent writes its Markdown handover and stops.
+2. The application exports that subagent's Pi session to an HTML file.
+3. The application saves a checkpoint referencing both files.
+4. Control returns to the orchestrator to review the handover and decide next steps.
+
+The orchestrator's session is exported only when the overall run ends, not after
+individual turns. The final checkpoint references that HTML export and records
+the run's outcome. HTML is for human inspection; the handover is for continuing
+work. Export failures must remain explicit and recoverable, never represented as
+successfully saved files or repaired by rerunning the agent.
+
 ## 4. Handover document — agreed format
 
 Store the handover as Markdown using this exact starting format:
@@ -179,13 +192,25 @@ same model.
   when it starts. Configuration changes affect future runs, not the active run or
   its recovery. No silent model fallback.
 - Provider/model identifiers are stored, never credentials.
+- V1 hardcodes `contextWindow` to **250000 tokens** in the allowed model definition,
+  for both orchestrator and subagents. Freeze it with the run configuration and
+  explicitly supply it to Pi rather than inheriting a changing default.
+- This is the configured context capacity, not an exact handover trigger. The Pi
+  integration must reserve room to produce the handover before context is exhausted
+  and verify compaction behavior. The selected backend must support this capacity;
+  changing metadata cannot increase its actual limit.
 
 Proposed configuration shape (identifiers are placeholders, not a final schema):
 
 ```json
 {
   "models": [
-    { "id": "default", "provider": "provider-id", "modelId": "model-id" }
+    {
+      "id": "default",
+      "provider": "provider-id",
+      "modelId": "model-id",
+      "contextWindow": 250000
+    }
   ],
   "orchestratorModel": "default"
 }
@@ -207,6 +232,9 @@ It records or references:
   and earlier outcomes.
 - Pi session identities and locations.
 - Handovers awaiting review and orchestrator decisions already applied.
+- Run-relative paths to each stopped subagent's handover and exported session HTML,
+  associated with its attempt and Pi session identity.
+- The orchestrator's exported session HTML in the final checkpoint.
 
 Save a new numbered JSON file at meaningful transitions rather than overwriting
 the previous snapshot:
@@ -215,9 +243,14 @@ the previous snapshot:
 checkpoints/
   000001.json   # Run created
   000002.json   # Subagent assignment saved, ready to dispatch
-  000003.json   # Subagent stopped; handover saved, awaiting review
+  000003.json   # Subagent stopped; handover and HTML saved, awaiting review
   000004.json   # Orchestrator decision saved with resulting run state
 ```
+
+Intermediate checkpoints, such as an assignment saved before dispatch, do not
+trigger HTML exports. Subagent handback and overall run end are the export
+boundaries. Preserve the Markdown, Pi conversation files, and HTML exports as
+separate files; checkpoint JSON references them instead of embedding their contents.
 
 These are illustrative milestones, not a fixed sequence. Each checkpoint is the
 complete workflow state, not just a change event. The latest durably committed

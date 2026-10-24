@@ -28,3 +28,15 @@ Once accepted, the request remains unchanged. Queue position, execution status,
 run identity, provider/model selection, and results do not belong in this record.
 Their schemas and the durable intake file layout are not defined by this slice.
 No production writer or runtime validator is implemented here.
+
+Related agreed design in `SPEC.md` (not additional implemented schemas):
+
+- Each subagent handback saves a Markdown handover, then a Pi session HTML export,
+  then a checkpoint referencing both files and the producing attempt/session.
+- Only the end of the overall run exports the orchestrator session; the final
+  checkpoint references that HTML file. Other checkpoints do not trigger exports.
+- Run configuration freezes the allowed provider/model choices with
+  `contextWindow: 250000`. This capacity must leave room for handover; it is not
+  an exact handover trigger. Each subagent assignment records its selected model.
+
+These fields belong in future run/configuration/attempt records, not requests.
