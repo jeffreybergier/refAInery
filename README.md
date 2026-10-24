@@ -83,9 +83,9 @@ live work. All displays are explicitly labeled TEST. Configuration remains
 fixture v1; storage uses fixture v2 for telemetry, execution timing, grouping,
 and transcript references. The fixture format is intentionally separate from
 future production schemas/checkpoints.
-See each sibling README for the base fields and references. `SPEC.md` section
-6.11 documents the optional backward-compatible v2 execution `details` fields;
-existing fixtures need no migration. These fields are fictional presentation
+See each sibling README for the base fields and references. Optional v2 execution
+`details` fields are validated in `source/preview.ts` and covered by
+`tests/preview.test.mjs`; existing fixtures need no migration. These fields are fictional presentation
 metadata, not a claim of live Pi telemetry. Artifact labels are text only;
 artifact downloads and live activity streams are not implemented. Do not put secrets or
 real private data in fixtures.
@@ -181,4 +181,4 @@ mobile page width, and empty/error states. It never changes sibling fixtures.
 - `source/public/preview.js` — safe text/SVG rendering and dashboard interactions.
 - `source/public/floor.js` — shared timeline layout, inspector, and navigation.
 - `serve.py` — shared container launcher; `--test` selects fictional fixtures.
-- `SPEC.md` — intended product architecture and future behavior.
+- `SPEC.md` — implemented web preview and the agreed initial storage/workflow model.
