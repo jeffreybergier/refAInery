@@ -872,6 +872,14 @@ is `manual`. Other sources may be added later without defining integrations now.
 A request preserves what was asked and where it came from; it is not itself an
 execution. A run records execution of that request.
 
+The initial production request contract is defined in
+`schemas/storage/v1/request.schema.json`, with a fictional example at
+`examples/storage/v1/request.json` in the application repository. It requires
+`schemaVersion: 1` and the four intake fields above, rejects unknown fields, and
+initially accepts only `manual` as a source. Queue state, run state, and model
+selection are separate records. This schema does not implement a storage writer
+or change the preview fixture contract.
+
 Incoming top-level requests enter a FIFO queue. When the factory is free, the
 scheduler automatically starts the oldest queued request. V1 has one active
 run at a time, without priorities, scheduled start times, or a separate manual

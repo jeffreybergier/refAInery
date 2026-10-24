@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "refAInery work request v1",
+  "description": "Immutable prompt-based intake record. Queue and execution state are stored separately. This record must not contain credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "prompt", "receivedAt", "source"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "description": "Application-assigned stable request identity, unique within storage. Uniqueness is enforced by the storage writer, not this schema."
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Original requested work, preserved without trimming or rewriting. Must contain at least one non-whitespace character."
+    },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "Application-recorded receipt time in UTC, using uppercase T and Z. Validators must enable date-time format assertions."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["manual"],
+      "description": "Intake source. V1 initially supports manual requests only; additional sources require an explicit contract update."
+    }
+  }
+}
