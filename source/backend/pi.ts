@@ -14,7 +14,7 @@ import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { ScriptedResponses } from "./scenario.ts";
 import { subagentText } from "../agents/subagent.ts";
 import { orchestratorText } from "../agents/orchestrator.ts";
-import { sharedText } from "../agents/shared.ts";
+import { sharedText, resolveAgentText } from "../agents/shared.ts";
 
 type Raw = Record<string, unknown>;
 export interface Inference {
@@ -98,7 +98,7 @@ export class PiAdapter {
   }
   async create(personality: Personality) {
     const text = this.workflow.state.configuration.agentText?.[personality.role]
-      ?? (personality.role === "orchestrator" ? orchestratorText : subagentText);
+      ?? resolveAgentText(personality.role === "orchestrator" ? orchestratorText : subagentText);
     const firstReply = text.firstReply;
     const finalAnswer = text.finalAnswer;
     const contextHandbackPrompt = this.workflow.state.configuration.agentText?.subagent.contextHandback

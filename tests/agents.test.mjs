@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { loadConfiguration } from '../source/backend/config.ts';
 import { orchestratorText, firstPrompt as orchestratorFirstPrompt, subagentReview } from '../source/agents/orchestrator.ts';
 import { subagentText, firstPrompt as subagentFirstPrompt, handoverSections } from '../source/agents/subagent.ts';
-import { sharedText } from '../source/agents/shared.ts';
+import { sharedText, composePrompt, resolveAgentText, personalityAdditionMarker as marker } from '../source/agents/shared.ts';
 import { Store } from '../source/backend/storage.ts';
 import { Workflow, enqueue } from '../source/backend/workflow.ts';
 
@@ -16,7 +16,7 @@ async function setup(t) {
   return root;
 }
 const overlay = { schemaVersion: 1, id: 'worker', name: 'Careful Worker',
-  role: 'subagent', instructions: '  Prefer small changes.\n' };
+  role: 'subagent', prompts: { instructions: '  Prefer small changes.\n' } };
 async function save(root, value) {
   await mkdir(join(root, 'agents'), { recursive: true });
   await writeFile(join(root, 'agents/worker.json'), JSON.stringify(value));
@@ -26,15 +26,20 @@ test('absent personalities resolve complete default roles and frozen text', asyn
   const root = await setup(t), config = await loadConfiguration(root);
   assert.deepEqual(config.personalities.map(p => p.id), ['orchestrator', 'worker']);
   const [orchestrator, worker] = config.personalities;
-  assert.ok(orchestrator.instructions.includes(orchestratorText.instructions));
-  assert.ok(worker.instructions.includes(subagentText.instructions));
+  assert.ok(orchestrator.instructions.includes(composePrompt(orchestratorText.instructions)));
+  assert.ok(worker.instructions.includes(composePrompt(subagentText.instructions)));
   assert.ok(worker.instructions.includes(subagentText.handover));
   for (const p of config.personalities) {
     assert.ok(p.instructions.includes(sharedText.instructions));
-    assert.equal(p.personalityInstructions, undefined);
+    assert.equal(p.personalityPrompts, undefined);
+    assert.ok(!p.instructions.includes(marker));
     assert.ok(!p.availableTools.includes('web_search'));
   }
-  assert.deepEqual(config.agentText, { shared: sharedText, orchestrator: orchestratorText, subagent: subagentText });
+  assert.deepEqual(config.agentTemplates, { shared: sharedText, orchestrator: orchestratorText, subagent: subagentText });
+  assert.deepEqual(config.agentText, { shared: sharedText,
+    orchestrator: resolveAgentText(orchestratorText), subagent: resolveAgentText(subagentText) });
+  assert.equal(config.agentText.orchestrator.firstReply.trim(), '');
+  assert.equal(config.agentText.subagent.finalAnswer.trim(), '');
   // Snapshot schema accepts new text while existing historical tests omit it.
   const store = new Store(root);
   const flow = new Workflow(store, await enqueue(store, 'Test defaults'), {
@@ -51,14 +56,77 @@ test('personality supplements core text and retains original guidance for audit'
   await save(root, overlay);
   const config = await loadConfiguration(root), worker = config.personalities[1];
   assert.equal(worker.name, overlay.name);
-  assert.equal(worker.personalityInstructions, overlay.instructions);
-  assert.ok(worker.instructions.startsWith(subagentText.instructions));
-  assert.ok(worker.instructions.endsWith(overlay.instructions));
-  assert.ok(worker.instructions.includes(sharedText.personality));
+  assert.deepEqual(worker.personalityPrompts, overlay.prompts);
+  assert.ok(worker.instructions.startsWith(composePrompt(subagentText.instructions, overlay.prompts.instructions)));
+  assert.ok(worker.instructions.includes(sharedText.instructions));
+  assert.equal(config.agentText.subagent.instructions, composePrompt(subagentText.instructions, overlay.prompts.instructions));
   assert.deepEqual(worker.availableTools, ['read', 'write', 'edit', 'bash', 'finish_task']);
-  await save(root, { ...overlay, instructions: 'Different personality' });
-  assert.equal(worker.personalityInstructions, overlay.instructions);
+  await save(root, { ...overlay, prompts: { instructions: 'Different personality' } });
+  assert.deepEqual(worker.personalityPrompts, overlay.prompts);
   assert.notEqual((await loadConfiguration(root)).personalities[1].instructions, worker.instructions);
+});
+
+test('prompt substitution is exact, literal, single-pass, and preserves surrounding text', () => {
+  const addition = `  Literal $& $1 \\ and ${marker}\n`;
+  assert.equal(composePrompt(`Before\n${marker}\nAfter`, addition), `Before\n${addition}\nAfter`);
+  assert.equal(composePrompt(`${marker}|${marker}`, addition), `${addition}|${addition}`);
+  assert.equal(composePrompt(`Before${marker}After`), 'BeforeAfter');
+  assert.equal(composePrompt(marker, ''), '');
+  assert.equal(composePrompt(marker, ' \n'), ' \n');
+  assert.equal(composePrompt('No marker'), 'No marker');
+  assert.throws(() => composePrompt('No marker', 'Addition', 'worker.prompts.firstReply'), /worker\.prompts\.firstReply.*no/);
+  assert.throws(() => composePrompt('No marker', ''), /no/);
+  assert.throws(() => resolveAgentText(subagentText, { subagentReview: 'Not allowed' }), /unsupported/);
+});
+
+test('all personality prompt slots resolve before dispatch and retain their raw source', async t => {
+  const root = await setup(t);
+  const workerPrompts = { instructions: 'Worker style', firstPrompt: 'Worker task style',
+    firstReply: 'Worker seed', finalAnswer: 'Worker reminder' };
+  const orchestratorPrompts = { instructions: 'Orchestrator style', firstPrompt: 'Request style',
+    firstReply: 'Orchestrator seed', finalAnswer: 'Orchestrator reminder', subagentReview: 'Review style' };
+  await save(root, { ...overlay, prompts: workerPrompts });
+  await writeFile(join(root, 'agents/orchestrator.json'), JSON.stringify({
+    schemaVersion: 1, id: 'orchestrator', name: 'Custom Orchestrator', role: 'orchestrator', prompts: orchestratorPrompts,
+  }));
+  const config = await loadConfiguration(root);
+  for (const [role, prompts, templates] of [
+    ['orchestrator', orchestratorPrompts, orchestratorText], ['subagent', workerPrompts, subagentText],
+  ]) {
+    for (const [key, addition] of Object.entries(prompts)) {
+      assert.equal(config.agentText[role][key], composePrompt(templates[key], addition));
+      assert.equal(config.agentTemplates[role][key], templates[key]);
+    }
+    const personality = config.personalities.find(p => p.role === role);
+    assert.deepEqual(personality.personalityPrompts, prompts);
+    assert.ok(personality.instructions.includes(config.agentText[role].instructions));
+  }
+  const frozenReply = config.agentText.subagent.firstReply;
+  config.agentTemplates.subagent.firstReply = 'Changed raw template';
+  config.personalities[1].personalityPrompts.firstReply = 'Changed raw addition';
+  assert.equal(config.agentText.subagent.firstReply, frozenReply);
+  assert.equal(subagentText.firstReply.includes(marker), true);
+});
+
+test('a present personality may omit every prompt addition', async t => {
+  const root = await setup(t), { prompts, ...metadata } = overlay;
+  for (const value of [metadata, { ...metadata, prompts: {} }]) {
+    await save(root, value);
+    assert.deepEqual((await loadConfiguration(root)).agentText.subagent, resolveAgentText(subagentText));
+  }
+});
+
+test('the loader reports the personality and slot when an insertion point is missing', async t => {
+  const root = await setup(t), original = subagentText.firstReply;
+  try {
+    subagentText.firstReply = 'No insertion point here';
+    await save(root, { ...overlay, prompts: { firstReply: 'Addition' } });
+    await assert.rejects(loadConfiguration(root), /worker\.prompts\.firstReply.*OPTIONAL_PERSONALITY_ADDITION/);
+    await save(root, overlay); // No firstReply addition: no marker is needed.
+    assert.equal((await loadConfiguration(root)).agentText.subagent.firstReply, subagentText.firstReply);
+  } finally {
+    subagentText.firstReply = original;
+  }
 });
 
 test('explicit tools remain role-bounded and workflow tools cannot be removed', async t => {
@@ -74,7 +142,10 @@ test('explicit tools remain role-bounded and workflow tools cannot be removed', 
 test('invalid or unreadable overlays fail closed rather than using defaults', async t => {
   const root = await setup(t);
   for (const invalid of [{ ...overlay, role: 'orchestrator' }, { ...overlay, id: 'other' },
-    { ...overlay, instructions: '' }, { ...overlay, unexpected: true }]) {
+    { ...overlay, prompts: { firstReply: null } }, { ...overlay, unexpected: true },
+    { ...overlay, instructions: 'Legacy top-level instructions' },
+    { ...overlay, prompts: { subagentReview: 'Not a worker slot' } },
+    { ...overlay, prompts: { firstPromt: 'Typo' } }, { ...overlay, prompts: [] }]) {
     await save(root, invalid);
     await assert.rejects(loadConfiguration(root), /Invalid personality/);
   }

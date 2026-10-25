@@ -1,6 +1,6 @@
 // End-to-end Pi, sandbox, persistence and shared HTTP reader. No model service.
 import assert from 'node:assert/strict';
-import { readFile, readdir, mkdir } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runOnce } from '../source/backend/runner.ts';
 import { loadScenario } from '../source/backend/scenario.ts';
@@ -8,8 +8,7 @@ import { modelConfiguration } from '../source/environment.ts';
 import { Store } from '../source/backend/storage.ts';
 import { loadProduction } from '../source/backend/workflow.ts';
 import { createAppServer } from '../source/server.ts';
-import { orchestratorText } from '../source/agents/orchestrator.ts';
-import { subagentText } from '../source/agents/subagent.ts';
+import { loadConfiguration } from '../source/backend/config.ts';
 
 const storage = process.env.REFAINERY_CHECK_STORAGE;
 assert.ok(storage, 'check.sh supplies disposable storage');
@@ -66,7 +65,7 @@ const defaultResult = await runOnce({ ...options, config: defaultConfig, storage
 assert.equal(defaultResult.outcome, 'completed');
 const defaults = (await loadProduction(new Store(defaultStorage))).runs[0].checkpoints.at(-1).configuration;
 assert.ok(defaults.agentText.subagent.contextHandback);
-assert.ok(defaults.personalities.every(p => !p.personalityInstructions));
+assert.ok(defaults.personalities.every(p => !p.personalityPrompts));
 assert.ok(defaults.personalities[1].instructions.includes('## Critical Context'));
 
 // Exercise every new outcome through the real Pi schemas and runner, including
@@ -98,27 +97,36 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
   assert.equal(data.inferences.length, responses.length);
   if (!beforeDispatch) assert.equal(state.tasks[0].attempts[0].stopReason, stopReason);
 }
-// Exercise nonempty prompt slots without putting test prose in agent defaults.
-const originalOrchestratorText = structuredClone(orchestratorText);
-const originalSubagentText = structuredClone(subagentText);
-try {
-  Object.assign(orchestratorText, { firstPrompt: 'Test initial orchestrator guidance',
-    firstReply: 'Test orchestrator seed', finalAnswer: 'Test orchestrator completion reminder',
-    subagentReview: 'Test handover review guidance' });
-  Object.assign(subagentText, { firstPrompt: 'Test initial worker guidance',
-    firstReply: 'Test worker seed', finalAnswer: 'Test worker completion reminder' });
+// Exercise every personality addition through the resolved run configuration.
+{
+  const promptConfig = join(storage, 'prompt-config');
+  await mkdir(join(promptConfig, 'agents'), { recursive: true });
+  for (const [id, role, prompts] of [
+    ['orchestrator', 'orchestrator', { instructions: 'Test orchestrator personality',
+      firstPrompt: 'Test initial orchestrator guidance',
+      firstReply: 'Test orchestrator seed {{ OPTIONAL_PERSONALITY_ADDITION }}',
+      finalAnswer: 'Test orchestrator completion reminder', subagentReview: 'Test handover review guidance' }],
+    ['worker', 'subagent', { instructions: 'Test worker personality', firstPrompt: 'Test initial worker guidance',
+      firstReply: 'Test worker seed', finalAnswer: 'Test worker completion reminder' }],
+  ]) {
+    await writeFile(join(promptConfig, 'agents', `${id}.json`), JSON.stringify({ schemaVersion: 1, id, name: id, role, prompts }));
+  }
+  const resolved = await loadConfiguration(promptConfig);
+  const { orchestrator: orchestratorText, subagent: subagentText } = resolved.agentText;
   for (const repair of [false, true]) {
     const root = join(storage, repair ? 'text-only-repair' : 'no-spurious-reminder');
     await mkdir(root);
     const responses = scenario.responses.flatMap(step => repair &&
       ['spawn_subagent', 'finish_task', 'finish_request'].includes(step.tool)
       ? [{ agent: step.agent, text: 'A text-only final answer without the required tool.' }, step] : [step]);
-    const result = await runOnce({ ...options, storage: root, scenario: { ...scenario, responses } });
+    const result = await runOnce({ ...options, config: promptConfig, storage: root, scenario: { ...scenario, responses } });
     assert.equal(result.outcome, 'completed');
     const store = new Store(root), saved = await loadProduction(store);
     assert.equal(saved.inferences.length, responses.length); // Seeds are not model calls.
     const state = saved.runs[0].checkpoints.at(-1);
-    assert.equal(state.configuration.agentText.orchestrator.firstReply, orchestratorText.firstReply);
+    assert.deepEqual(state.configuration.agentText, resolved.agentText);
+    assert.deepEqual(state.configuration.agentTemplates, resolved.agentTemplates);
+    assert.deepEqual(state.configuration.personalities.map(p => p.personalityPrompts), resolved.personalities.map(p => p.personalityPrompts));
     for (const [sessionPath, text, reminderCount] of [
       [state.orchestrator.sessionPath, orchestratorText, repair ? 2 : 0],
       [state.tasks[0].attempts[0].sessionPath, subagentText, repair ? 1 : 0],
@@ -130,6 +138,9 @@ try {
       const seeds = messages.filter(message => message.role === 'assistant' && message.provider === 'refainery');
       assert.equal(seeds.length, 1);
       assert.equal(content(seeds[0]), text.firstReply);
+      assert.ok(messages.some(message => message.role === 'system' &&
+        [content(message), ...Object.values(message.sections ?? {})].some(section =>
+          typeof section === 'string' && section.includes(text.instructions.trim()))));
       const firstUser = messages.findIndex(message => message.role === 'user');
       assert.ok(content(messages[firstUser]).startsWith(text.firstPrompt));
       assert.equal(messages[firstUser + 1], seeds[0]);
@@ -146,14 +157,11 @@ try {
   ]) {
     const root = join(storage, name);
     await mkdir(root);
-    await assert.rejects(runOnce({ ...options, storage: root, scenario: { ...scenario, responses } }), /Milestone incomplete/);
+    await assert.rejects(runOnce({ ...options, config: promptConfig, storage: root, scenario: { ...scenario, responses } }), /Milestone incomplete/);
     const saved = await loadProduction(new Store(root));
     assert.equal(saved.inferences.length, responses.length);
     assert.equal(saved.runs[0].checkpoints.at(-1).phase, 'recovery-required');
   }
-} finally {
-  Object.assign(orchestratorText, originalOrchestratorText);
-  Object.assign(subagentText, originalSubagentText);
 }
 
 // Scripted errors use the real interruption path too; keep them out of the

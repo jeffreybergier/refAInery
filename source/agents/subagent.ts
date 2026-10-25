@@ -1,18 +1,22 @@
-import { promptWithContext } from "./shared.ts";
+import { composePrompt, promptWithContext } from "./shared.ts";
 
 // ── Agent text: review behavioral guidance here ──────────────────
 export const subagentText = {
   // System-role guidance (optional personality is composed separately).
   instructions: `
+{{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // Initial user message; assignment JSON is appended automatically.
   firstPrompt: `
+{{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // Assistant message seeded once after firstPrompt; blank disables seeding.
   firstReply: `
+{{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // User reminder after a clean text-only stop; blank disables the reminder.
   finalAnswer: `
+{{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   handover: `## Goal
 
@@ -49,6 +53,6 @@ export const subagent = {
 
 // The validation contract and the agent's template share one source of truth.
 export const handoverSections = subagentText.handover.split("\n").filter(Boolean);
-export function firstPrompt(assignment: string, text = subagentText.firstPrompt): string {
+export function firstPrompt(assignment: string, text = composePrompt(subagentText.firstPrompt)): string {
   return promptWithContext(text, { assignment });
 }

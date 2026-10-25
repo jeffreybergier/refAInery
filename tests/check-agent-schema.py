@@ -22,7 +22,7 @@ VALID = {
     "id": "worker",
     "name": "Worker",
     "role": "subagent",
-    "instructions": "Work carefully.\n\nReport what you checked.",
+    "prompts": {"instructions": "Work carefully.\n\nReport what you checked."},
     "availableTools": ["read", "write", "edit", "bash"],
 }
 
@@ -47,10 +47,30 @@ class AgentSchemaTests(unittest.TestCase):
                 del agent[field]
                 self.assertFalse(self.validator.is_valid(agent))
 
-    def test_tools_are_optional(self):
+    def test_tools_and_prompts_are_optional(self):
         agent = deepcopy(VALID)
         del agent["availableTools"]
+        del agent["prompts"]
         self.validator.validate(agent)
+        self.validator.validate({**agent, "prompts": {}})
+
+    def test_prompt_slots_and_role_authorization(self):
+        for role in ["orchestrator", "subagent"]:
+            fields = ["instructions", "firstPrompt", "firstReply", "finalAnswer"]
+            if role == "orchestrator":
+                fields.append("subagentReview")
+            for field in fields:
+                for value in ["", " \n\t", "Literal {{ OPTIONAL_PERSONALITY_ADDITION }}"]:
+                    self.validator.validate({**VALID, "role": role,
+                                             "prompts": {field: value}})
+                for value in [None, 1, True, [], {}]:
+                    self.assertFalse(self.validator.is_valid(
+                        {**VALID, "role": role, "prompts": {field: value}}))
+        self.assertFalse(self.validator.is_valid(
+            {**VALID, "prompts": {"subagentReview": "Review"}}))
+        for field in ["unknown", "firstPromt", "contextHandback", "handover"]:
+            self.assertFalse(self.validator.is_valid(
+                {**VALID, "prompts": {field: "Not customizable"}}))
 
     def test_invalid_values(self):
         cases = {
@@ -58,7 +78,7 @@ class AgentSchemaTests(unittest.TestCase):
             "id": ["", "../worker", "worker\n", " worker", "a" * 129],
             "name": ["", " \n\t", None],
             "role": ["worker", "admin", "", None],
-            "instructions": ["", " \n\t", None, {}],
+            "prompts": [None, "text", [], 1],
             "availableTools": [None, "read", ["read", "read"], ["*"],
                                [""], ["../bash"], ["read\n"], [1]],
         }
@@ -70,7 +90,7 @@ class AgentSchemaTests(unittest.TestCase):
                     self.assertFalse(self.validator.is_valid(agent))
 
     def test_unknown_fields_are_rejected(self):
-        for field in ["instructionsFile", "model", "actualModel", "apiKey"]:
+        for field in ["instructions", "firstPrompt", "instructionsFile", "model", "actualModel", "apiKey"]:
             with self.subTest(field=field):
                 self.assertFalse(self.validator.is_valid({**VALID, field: "x"}))
 

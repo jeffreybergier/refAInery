@@ -27,14 +27,12 @@
         "orchestratorModel": { "const": "default" },
         "personalities": { "type": "array", "items": { "type": "object" } },
         "agentText": {
-          "description": "Frozen harness text; optional for historical checkpoints.",
-          "type": "object", "additionalProperties": false,
-          "required": ["shared", "orchestrator", "subagent"],
-          "properties": {
-            "shared": { "$ref": "#/$defs/agentText" },
-            "orchestrator": { "$ref": "#/$defs/agentText" },
-            "subagent": { "$ref": "#/$defs/agentText" }
-          }
+          "description": "Frozen resolved prompts; optional for historical checkpoints.",
+          "$ref": "#/$defs/agentTextSet"
+        },
+        "agentTemplates": {
+          "description": "Original harness templates before personality composition; optional for historical checkpoints.",
+          "$ref": "#/$defs/agentTextSet"
         },
         "extensions": { "type": "array", "items": {
           "type": "object", "additionalProperties": false, "required": ["name", "code", "sha256"],
@@ -84,6 +82,15 @@
   },
   "$defs": {
     "agentText": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
+    "agentTextSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["shared", "orchestrator", "subagent"],
+      "properties": {
+        "shared": { "$ref": "#/$defs/agentText" },
+        "orchestrator": { "$ref": "#/$defs/agentText" },
+        "subagent": { "$ref": "#/$defs/agentText" }
+      }
+    },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])", "maxLength": 128 },
     "text": { "type": "string", "pattern": "\\S" },
     "time": { "type": "string", "format": "date-time", "pattern": "Z$" },

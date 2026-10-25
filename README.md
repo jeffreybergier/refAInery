@@ -108,13 +108,17 @@ have equivalent sections in `source/extensions/workflow.ts` and
 Each role has editable `instructions`, `firstPrompt`, `firstReply`, and
 `finalAnswer` slots; the orchestrator also has `subagentReview`. `firstReply`
 seeds assistant-role history once. A nonblank `finalAnswer` enables one bounded
-reminder for a text-only stop without a terminal workflow action. Blank slots
-are authoring placeholders; request/assignment/handover data is still supplied.
+reminder for a text-only stop without a terminal workflow action. Marker-only
+slots are authoring placeholders; request/assignment/handover data is still supplied.
 
 Config files `agents/orchestrator.json` and `agents/worker.json` are optional
-personality overlays, not replacements for those contracts. With neither file,
-the built-in agents still work. Invalid files fail validation. New run snapshots
-retain the composed instructions, personality text, tools, and harness templates.
+personality overlays, not replacements for those contracts. Their optional
+`prompts` object uses the same slot names. Each addition is inserted at
+`{{ OPTIONAL_PERSONALITY_ADDITION }}` in its harness template; omitted additions
+remove the marker, and supplied additions without an insertion point fail
+validation. Move old top-level `instructions` into `prompts.instructions`.
+With neither file, the built-in roles are used. New run snapshots retain the
+resolved prompts, original additions, tools, and original harness templates.
 See [the personality contract](schemas/config/v1/README.md) for examples and
 legacy tool-allowlist compatibility. Selection remains one orchestrator and one
 worker, not a generalized personality catalog.

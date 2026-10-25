@@ -4,7 +4,13 @@
   "description": "Optional personality overlay on a harness-owned agent role, not a running agent or model selection. Must not contain credentials.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "name", "role", "instructions"],
+  "required": ["schemaVersion", "id", "name", "role"],
+  "allOf": [{
+    "if": { "properties": { "role": { "const": "subagent" } } },
+    "then": { "properties": { "prompts": {
+      "type": "object", "properties": { "subagentReview": false }
+    } } }
+  }],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
     "id": {
@@ -16,11 +22,17 @@
     },
     "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
     "role": { "type": "string", "enum": ["orchestrator", "subagent"] },
-    "instructions": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "\\S",
-      "description": "Additional personality guidance, preserved without trimming or rewriting. Supplements rather than replaces the harness role contract. Instructions are not a permissions boundary."
+    "prompts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional literal additions to matching harness prompts at {{ OPTIONAL_PERSONALITY_ADDITION }}. Every field is optional. The loader rejects supplied additions if the matching template has no marker. subagentReview is orchestrator-only.",
+      "properties": {
+        "instructions": { "type": "string" },
+        "firstPrompt": { "type": "string" },
+        "firstReply": { "type": "string" },
+        "finalAnswer": { "type": "string" },
+        "subagentReview": { "type": "string" }
+      }
     },
     "availableTools": {
       "type": "array",

@@ -13,20 +13,67 @@ validation. The configuration root itself must exist.
   "id": "worker",
   "name": "Careful Worker",
   "role": "subagent",
-  "instructions": "Favor focused changes and explain technical tradeoffs plainly."
+  "prompts": {
+    "instructions": "Favor focused changes and explain technical tradeoffs plainly.",
+    "firstReply": "I will focus on small, verifiable changes."
+  }
 }
 ```
 
-The first five fields are required when a file is present. Unknown fields are
-rejected. Names and instructions must be nonblank. IDs are case-sensitive,
+Only `schemaVersion`, `id`, `name`, and `role` are required when a file is
+present. The `prompts` object and every field inside it are optional. Unknown
+fields are rejected, and names must be nonblank. IDs are case-sensitive,
 1–128 ASCII letters/digits/underscores/hyphens, starting with a letter or digit.
 The current single-worker runner accepts only the two filenames/roles above;
 this is not yet a catalog of dynamically selectable personalities.
 
-Personality instructions supplement, never replace, the role contract. Their
-whitespace is preserved. They describe tone, expertise, and working preferences,
-not the workflow protocol. Model selection, credentials, and execution state do
-not belong in personality files. There is no separate instruction-file reference.
+Personality additions supplement, never replace, the role contract. They describe
+tone, expertise, and working preferences, not the workflow protocol. Model
+selection, credentials, and execution state do not belong in personality files.
+There is no separate instruction-file reference.
+
+## Prompt additions and insertion points
+
+Both roles accept `prompts.instructions`, `prompts.firstPrompt`,
+`prompts.firstReply`, and `prompts.finalAnswer`. Only orchestrators accept
+`prompts.subagentReview`; that field is rejected for subagents. All values must
+be strings. An omitted `prompts` object, `{}`, and individual omitted fields are
+valid. Empty strings are valid additions too.
+
+The matching harness-owned template controls placement with this exact marker:
+
+```text
+{{ OPTIONAL_PERSONALITY_ADDITION }}
+```
+
+For example, a harness `firstReply` template can contain:
+
+```text
+I will verify the outcome before reporting success.
+{{ OPTIONAL_PERSONALITY_ADDITION }}
+```
+
+Composition happens once, during configuration loading:
+
+- Each marker in the harness template is replaced with that slot's addition.
+- If the addition is omitted, the marker is removed.
+- If an addition is supplied but the template lacks the marker, loading fails
+  with the personality ID and slot name. This also applies to explicitly supplied
+  empty strings; omit the field if the template has no insertion point.
+- Inserted text is literal, including whitespace, dollar signs, and markers.
+  It is not processed a second time. No other template syntax is supported.
+- Shared guidance, handover format, context-handback prompts, and tool policy
+  cannot be customized through `prompts`.
+
+The editable role slots include marker-only defaults. With no addition these
+resolve to whitespace, so they do not seed an assistant reply or enable a
+completion reminder. Filling `prompts.firstReply` or `prompts.finalAnswer` enables
+that slot without changing its message role or timing.
+
+**Migration:** move the old top-level `instructions` value to
+`prompts.instructions`. The old field is rejected rather than silently appended.
+Both sibling environment configurations have been migrated. Historical saved
+run configurations are not reinterpreted using the new input schema.
 
 ## Tools and enforcement
 
@@ -63,8 +110,8 @@ Review behavior in the marked text sections at the top of:
   and persistence logic. Ordinary diagnostic errors stay near their checks.
 
 Prompt builders live below the text sections. The editable slots are multiline
-strings; blank slots are intentional scaffolding for authoring guidance, not a
-validated live-model prompting strategy. Do not add inline behavioral prose to
+strings; marker-only slots are intentional scaffolding for authoring guidance,
+not a validated live-model prompting strategy. Do not add inline behavioral prose to
 `runner.ts` or `pi.ts`.
 
 | Slot | Role and timing |
@@ -76,8 +123,9 @@ validated live-model prompting strategy. Do not add inline behavioral prose to
 | `subagentReview` | Orchestrator-only user-role guidance after a handover, followed by attempt ID, stop reason, and handover as JSON. |
 
 Data is appended independently of editable guidance, even when it is empty.
-There is no `{{placeholder}}` substitution. Review prompts retain the explicit
-untrusted-content boundary for subagent handovers.
+Only the personality marker in harness templates is substituted, never request,
+assignment, or handover content. Review prompts retain the explicit untrusted-content
+boundary for subagent handovers.
 
 The first reply is a complete synthetic assistant message, not a partial-token
 prefill and not a user-role custom message. Pi persists it in JSONL and exports.
@@ -93,10 +141,12 @@ still omits its workflow tool, normal interruption/recovery handling applies.
 Context-limit handback retains its separate, stricter path.
 
 Each new run freezes the fully composed system instructions, original optional
-personality instructions, resolved tools, harness text/templates (`agentText`),
-and extension source/hashes. Old checkpoints without `agentText` remain readable.
-Changing either repository does not rewrite earlier snapshots. Automatic replay
-or recovery remains unsupported.
+additions (`personalities[].personalityPrompts`), original harness templates
+(`agentTemplates`), resolved text (`agentText`), tools, and extension source/hashes.
+The runner and session adapter use the resolved text; they do not re-expand it
+or reread personality files during the run. Old checkpoints without these fields
+remain readable. Changing either repository does not rewrite earlier snapshots.
+Automatic replay or recovery remains unsupported.
 
 ## Checks
 
