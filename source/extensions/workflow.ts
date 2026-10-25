@@ -5,7 +5,7 @@ import type { Type as SchemaType, TSchema } from "@earendil-works/pi-ai";
 // Ask the user for explicit permission before changing either, including wording
 // cleanups, renames, or prompt "improvements". Do not change them without approval.
 
-type Action = "update_plan" | "assign_subagent" | "submit_handover" | "finish_run";
+type Action = "update_plan" | "spawn_subagent" | "finish_task" | "finish_request";
 type Host = (callId: string, name: Action, args: Record<string, unknown>) => Promise<unknown>;
 
 /** Thin Pi-facing definitions. The backend binds caller identity and owns every
@@ -16,17 +16,17 @@ export function createWorkflowExtension(
 ): (pi: ExtensionAPI) => void {
   const text = () => Type.String({ minLength: 1, maxLength: 65536 });
   const definitions = [
-    { name: "update_plan", description: "Save the complete Markdown plan for this planning turn before assigning work or finishing. Call separately and wait for confirmation.",
+    { name: "update_plan", description: "ALWAYS create a plan to complete the REQUEST. Each TASK in the plan may be accomplished by spawning one more subagents. Update the plan whenever you receive new information from the subagents. ALWAYS use the PLAN format provided in your instructions.",
       parameters: Type.Object({ markdown: text() }, { additionalProperties: false }) },
-    { name: "assign_subagent", description: "Assign one bounded task using personality worker and model default, then yield. Requires a saved plan for this turn. Do not combine with other tool calls.",
+    { name: "spawn_subagent", description: "Spawn a subagent to execute a TASK from your PLAN.",
       parameters: Type.Object({ personality: Type.Literal("worker"), model: Type.Literal("default"),
         title: text(), assignment: text(), rationale: text() }, { additionalProperties: false }) },
-    { name: "submit_handover", description: "Submit the full agreed Markdown handover and stop working. Completed means the assignment finished, not that it was independently verified. Do not combine with other tool calls.",
+    { name: "finish_task", description: "WHEN you are finished with your TASK OR you cannot continue due to problems, call this tool to submit your handover documentation to the Orchestrator. ALWAYS use the template provided in your instructions.",
       parameters: Type.Object({ markdown: text(), stopReason: Type.Union([
-        Type.Literal("completed"), Type.Literal("context-limit"),
+        Type.Literal("success"), Type.Literal("failure"), Type.Literal("context-limit"),
       ]) }, { additionalProperties: false }) },
-    { name: "finish_run", description: "Finish the original request after reviewing handovers and saving a final plan. This ends your turn. Do not combine with other tool calls.",
-      parameters: Type.Object({ outcome: Type.Union([Type.Literal("completed"), Type.Literal("failed")]),
+    { name: "finish_request", description: "ALWAYS call this tool when all of the TASKs from your PLAN have been completed and you have confirmed that the REQUEST is fully complete OR when you think the REQUEST cannot be completed for reasons outside of your control.",
+      parameters: Type.Object({ outcome: Type.Union([Type.Literal("success"), Type.Literal("failure"), Type.Literal("question")]),
         summary: text(), rationale: text() }, { additionalProperties: false }) },
   ] as const;
   return (pi) => {

@@ -50,8 +50,8 @@ top-level configuration schema and recovery mechanism remain future work.
 The sibling configuration repository contains `orchestrator.json` and
 `worker.json`. Production definitions both allow `web_search`. The worker additionally allows `web_fetch`
 and Pi's standard `read`, `write`, `edit`, and `bash` tools. The orchestrator also
-has `update_plan`, `assign_subagent`, and `finish_run`; the worker has
-`submit_handover`. Test definitions omit web capabilities. The application-owned
+has `update_plan`, `spawn_subagent`, and `finish_request`; the worker has
+`finish_task`. Test definitions omit web capabilities. The application-owned
 `source/extensions/workflow.ts` delegates persistence to the backend.
 The reviewed `source/extensions/web-search.ts`
 provides session-scoped provider-native search/fetch declarations, not local Pi

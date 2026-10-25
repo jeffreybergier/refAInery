@@ -8,10 +8,10 @@ export interface Personality {
   instructions: string; availableTools: string[];
 }
 export const SDK_VERSION = "1.4.0";
-export const CATALOG_VERSION = "refainery-tools-v1";
+export const CATALOG_VERSION = "refainery-tools-v2";
 const allowed = {
-  orchestrator: ["web_search", "update_plan", "assign_subagent", "finish_run"],
-  subagent: ["read", "write", "edit", "bash", "web_search", "web_fetch", "submit_handover"],
+  orchestrator: ["web_search", "update_plan", "spawn_subagent", "finish_request"],
+  subagent: ["read", "write", "edit", "bash", "web_search", "web_fetch", "finish_task"],
 };
 export async function loadConfiguration(root: string) {
   const schema = JSON.parse(await readFile(new URL("../../schemas/config/v1/agent.schema.json", import.meta.url), "utf8"));
@@ -24,7 +24,7 @@ export async function loadConfiguration(root: string) {
     }
     const agent = data as Personality;
     if (agent.availableTools.some((tool) => !allowed[agent.role].includes(tool))) throw new Error("Unauthorized tool");
-    const required = id === "worker" ? ["submit_handover"] : ["update_plan", "assign_subagent", "finish_run"];
+    const required = id === "worker" ? ["finish_task"] : ["update_plan", "spawn_subagent", "finish_request"];
     if (required.some((tool) => !agent.availableTools.includes(tool))) throw new Error("Missing workflow tool");
     personalities.push(agent);
   }

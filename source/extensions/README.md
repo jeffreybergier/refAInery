@@ -65,8 +65,16 @@ callback. This avoids runtime module resolution from the separate config repo.
 
 - `update_plan` saves complete Markdown and returns its revision without ending
   the orchestrator turn.
-- `assign_subagent` and `finish_run` save the orchestrator's next action and yield.
-- `submit_handover` saves the worker handover/stop reason and yields.
+- `spawn_subagent` and `finish_request` save the orchestrator's next action and yield.
+- `finish_task` saves the worker handover/stop reason and yields.
+
+The tool catalog is `refainery-tools-v2`. Worker stop reasons are `success`,
+`failure`, and `context-limit`; request outcomes are `success`, `failure`, and
+`question`. The backend maps request success/failure to the existing
+completed/failed run statuses. A question saves a `waiting-for-user` run, with
+its question in `resultSummary`, no end timestamp, and a durable session export.
+There is no automatic resume or user-answer ingestion yet. Old catalog records
+remain readable, but old tool names/outcomes are not accepted for new calls.
 
 All four execute sequentially. Yielding calls return Pi's termination flag only
 after the backend acknowledges durable state. The backend additionally forbids

@@ -54,6 +54,7 @@ export class Workflow {
     this.committed = structuredClone(next);
   }
   async beginTurn() {
+    if (this.state.status !== "running") throw new Error("Run is not active");
     if (this.state.pendingAction) throw new Error("Unconsumed action");
     this.state.phase = "planning";
     this.state.orchestrator.turns.push({ id: identity("turn"), title: this.state.tasks.length ? "Review handover" : "Plan request",
@@ -63,6 +64,28 @@ export class Workflow {
   async endTurn() {
     const turn = this.state.orchestrator.turns.at(-1)!;
     turn.endedAt = now(); turn.status = "completed";
+    await this.save();
+  }
+  /** Publish a durable outcome only after the orchestrator has stopped/exported.
+   * A question pauses the run; resumption remains an explicit operator action.
+   */
+  async finishRequest() {
+    const decision = this.state.pendingAction;
+    if (this.state.status !== "running" || decision?.kind !== "finish" ||
+        this.state.orchestrator.turns.at(-1)?.endedAt == null ||
+        this.state.orchestrator.export.state !== "saved") {
+      throw new Error("Request outcome is not durable");
+    }
+    const statuses: Record<string, string> = {
+      success: "completed", failure: "failed", question: "waiting-for-user",
+    };
+    const status = statuses[decision.outcome ?? ""];
+    if (!status) throw new Error("Invalid outcome");
+    this.state.status = status;
+    this.state.resultSummary = decision.summary!;
+    this.state.phase = status === "waiting-for-user" ? "waiting-for-user" : "ended";
+    this.state.endedAt = status === "waiting-for-user" ? null : now();
+    this.state.pendingAction = null;
     await this.save();
   }
   async action(role: "orchestrator" | "subagent", sessionId: string, callId: string, name: string, args: Record<string, unknown>) {
@@ -87,12 +110,12 @@ export class Workflow {
         this.state.plan = path;
         this.state.plans.push({ path, turnId: turn.id, at: now() });
         result = { saved: true, planRevision: path };
-      } else if (name === "assign_subagent" || name === "finish_run") {
+      } else if (name === "spawn_subagent" || name === "finish_request") {
         if (this.state.plans.at(-1)?.turnId !== turn.id) throw new Error("Call update_plan in this turn first");
         const summary = requireText(args.rationale);
         const last = this.state.tasks.at(-1)?.attempts.at(-1);
         if (last && (last.export.state !== "saved" || !last.endedAt)) throw new Error("Handback is not durable");
-        if (name === "assign_subagent") {
+        if (name === "spawn_subagent") {
           if (args.personality !== "worker" || args.model !== "default") throw new Error("Selection outside frozen allowlist");
           // This milestone intentionally permits one worker only, not an unattended factory.
           if (this.state.tasks.length >= 1) throw new Error("Milestone assignment budget exhausted; finish with an honest outcome");
@@ -100,8 +123,8 @@ export class Workflow {
           this.state.tasks.push({ id: identity("task"), title, model: "default", assignment, attempts: [] });
           this.state.pendingAction = { kind: "assign" };
         } else {
-          if (!["completed", "failed"].includes(String(args.outcome))) throw new Error("Invalid outcome");
-          if (!last) throw new Error("Milestone requires a worker handover before finishing");
+          if (!["success", "failure", "question"].includes(String(args.outcome))) throw new Error("Invalid outcome");
+          if (!last && args.outcome === "success") throw new Error("Milestone requires a worker handover before success");
           this.state.pendingAction = { kind: "finish", outcome: String(args.outcome), summary: requireText(args.summary) };
         }
         if (last) { last.review = "decided"; last.reviewedAt = now(); }
@@ -110,13 +133,13 @@ export class Workflow {
       } else throw new Error("Tool not authorized for orchestrator");
     } else {
       const attempt = this.state.tasks.at(-1)?.attempts.at(-1);
-      if (name !== "submit_handover" || !attempt || attempt.sessionId !== sessionId ||
+      if (name !== "finish_task" || !attempt || attempt.sessionId !== sessionId ||
           this.state.phase !== "executing" || attempt.handover) throw new Error("Tool not authorized for this attempt");
       const markdown = requireText(args.markdown);
       for (const section of ["## Goal", "## Constraints & Preferences", "## Progress", "### Done", "### In Progress", "### Blocked", "## Key Decisions", "## Next Steps", "## Critical Context", "<read-files>", "</read-files>", "<modified-files>", "</modified-files>"]) {
         if (!markdown.includes(section)) throw new Error("Missing required handover section");
       }
-      if (!["completed", "context-limit"].includes(String(args.stopReason))) throw new Error("Invalid stop reason");
+      if (!["success", "failure", "context-limit"].includes(String(args.stopReason))) throw new Error("Invalid stop reason");
       const path = `handovers/${attempt.id}.md`;
       await this.store.document(`${this.prefix}/${path}`, markdown);
       attempt.handover = path; attempt.stopReason = String(args.stopReason);

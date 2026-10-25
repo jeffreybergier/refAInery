@@ -59,6 +59,25 @@ try {
     await page.setViewportSize({width,height:1000});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   }
+  // A paused run shows its question, not a final-completion summary.
+  const pausedServer = createAppServer(undefined,
+    new Store(process.env.REFAINERY_CHECK_STORAGE + '/question-before-dispatch'), 'test');
+  await new Promise(resolve => pausedServer.listen(0, '127.0.0.1', resolve));
+  try {
+    const pausedPage = await browser.newPage();
+    pausedPage.on('pageerror', error => errors.push(error.message));
+    await pausedPage.goto(`http://127.0.0.1:${pausedServer.address().port}/v1`);
+    await pausedPage.waitForSelector('.floor-job-button');
+    await pausedPage.locator('.floor-job-button').last().click();
+    const pausedInspector = pausedPage.locator('.floor-inspector');
+    assert.match(await pausedInspector.textContent(), /waiting-for-user/);
+    await pausedInspector.getByText('Question for user', { exact: true }).click();
+    assert.ok(await pausedInspector.getByText('Which target should be used?', { exact: true }).isVisible());
+    assert.equal(await pausedInspector.getByText('Final outcome summary', { exact: true }).count(), 0);
+    await pausedPage.close();
+  } finally {
+    await new Promise(resolve => { pausedServer.close(resolve); pausedServer.closeAllConnections(); });
+  }
   assert.deepEqual(errors,[]);
   if(process.env.REFAINERY_SCREENSHOT) await page.screenshot({path:process.env.REFAINERY_SCREENSHOT,fullPage:true});
   console.log('Scripted workflow browser passed: real timeline, plan history, model identities, handover, decision, native Pi viewers, controls and JSONL downloads, refresh and mobile layout.');

@@ -196,8 +196,8 @@ Only the orchestrator creates subagents. Subagents cannot delegate or pass work
 directly to another subagent. The orchestrator owns the plan and decides whether
 the original request is finished.
 
-The implemented tools are `update_plan`, `assign_subagent`, `finish_run`, and
-worker-only `submit_handover`. Their thin Pi definitions live in the config repo;
+The implemented tools are `update_plan`, `spawn_subagent`, `finish_request`, and
+worker-only `finish_task`. Their thin Pi definitions live in `source/extensions/`;
 the backend binds caller identity and owns durable transitions. The orchestrator
 must save a full Markdown plan in each planning/review turn before assignment or
 finalization. Each revision is immutable and each subsequent action references
@@ -267,7 +267,7 @@ path/to/changed.ts
 ```
 
 Application bookkeeping records which subagent attempt produced it and why it
-stopped: `completed` or `context-limit`. Missing handovers after interruption stay
+stopped: `success`, `failure`, or `context-limit`. Missing handovers after interruption stay
 explicitly absent. Next Steps are recommendations; only the orchestrator decides
 what happens next. File lists are agent-reported, not a verified change audit.
 

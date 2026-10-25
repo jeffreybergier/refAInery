@@ -19,7 +19,13 @@ export function validateCheckpoint(value: unknown, previous?: Checkpoint): asser
   if (!before(state.startedAt, state.savedAt) ||
       (state.endedAt && !before(state.endedAt, state.savedAt)) ||
       ((state.phase === "ended") !== ["completed", "failed"].includes(state.status)) ||
-      (state.phase === "ended" && (!state.endedAt || state.orchestrator.export.state !== "saved"))) {
+      (state.phase === "ended" && (!state.endedAt || state.orchestrator.export.state !== "saved")) ||
+      ((state.phase === "waiting-for-user") !== (state.status === "waiting-for-user")) ||
+      (state.status === "waiting-for-user" && (state.endedAt !== null ||
+        state.orchestrator.export.state !== "saved" || !state.resultSummary?.trim() ||
+        state.pendingAction !== null || state.failure !== null ||
+        state.orchestrator.turns.some((turn) => !turn.endedAt) ||
+        state.tasks.some((task) => task.attempts.some((attempt) => !attempt.endedAt))))) {
     throw new Error("Invalid run boundary");
   }
   const paths = new Set(state.plans.map((plan) => plan.path));

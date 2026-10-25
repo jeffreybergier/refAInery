@@ -12,8 +12,8 @@
     "savedAt": { "$ref": "#/$defs/time" },
     "startedAt": { "$ref": "#/$defs/time" },
     "endedAt": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
-    "status": { "enum": ["running", "completed", "failed", "interrupted"] },
-    "phase": { "enum": ["created", "planning", "dispatching", "executing", "stopping-worker", "exporting", "awaiting-review", "finalizing", "ended", "recovery-required"] },
+    "status": { "enum": ["running", "completed", "failed", "interrupted", "waiting-for-user"] },
+    "phase": { "enum": ["created", "planning", "dispatching", "executing", "stopping-worker", "exporting", "awaiting-review", "finalizing", "ended", "recovery-required", "waiting-for-user"] },
     "configuration": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "models", "orchestratorModel", "personalities", "extensions", "sdkVersion", "toolCatalogVersion"],
@@ -30,7 +30,7 @@
           "type": "object", "additionalProperties": false, "required": ["name", "code", "sha256"],
           "properties": { "name": { "enum": ["workflow", "web-search"] }, "code": { "$ref": "#/$defs/text" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
         } },
-        "sdkVersion": { "const": "1.4.0" }, "toolCatalogVersion": { "const": "refainery-tools-v1" }
+        "sdkVersion": { "const": "1.4.0" }, "toolCatalogVersion": { "enum": ["refainery-tools-v1", "refainery-tools-v2"] }
       }
     },
     "plan": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
@@ -57,17 +57,17 @@
       "type": "object", "additionalProperties": false, "required": ["attemptId", "at", "action", "summary", "plan"],
       "properties": {
         "attemptId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
-        "at": { "$ref": "#/$defs/time" }, "action": { "enum": ["assign_subagent", "finish_run"] },
+        "at": { "$ref": "#/$defs/time" }, "action": { "enum": ["assign_subagent", "finish_run", "spawn_subagent", "finish_request"] },
         "summary": { "$ref": "#/$defs/text" }, "plan": { "$ref": "#/$defs/markdown" }
       }
     } },
     "receipts": { "type": "object", "additionalProperties": {
       "type": "object", "additionalProperties": false, "required": ["action", "argsHash", "result"],
-      "properties": { "action": { "enum": ["update_plan", "assign_subagent", "submit_handover", "finish_run"] }, "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "result": {} }
+      "properties": { "action": { "enum": ["update_plan", "assign_subagent", "submit_handover", "finish_run", "spawn_subagent", "finish_task", "finish_request"] }, "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "result": {} }
     } },
     "pendingAction": { "anyOf": [{ "type": "null" }, {
       "type": "object", "additionalProperties": false, "required": ["kind"],
-      "properties": { "kind": { "enum": ["assign", "finish"] }, "outcome": { "enum": ["completed", "failed"] }, "summary": { "$ref": "#/$defs/text" } }
+      "properties": { "kind": { "enum": ["assign", "finish"] }, "outcome": { "enum": ["completed", "failed", "success", "failure", "question"] }, "summary": { "$ref": "#/$defs/text" } }
     }] },
     "failure": { "type": ["string", "null"] },
     "resultSummary": { "type": ["string", "null"] }
@@ -101,7 +101,7 @@
         "number": { "const": 1 }, "model": { "const": "default" }, "personality": { "const": "worker" },
         "sessionId": { "$ref": "#/$defs/id" }, "sessionPath": { "type": "string", "pattern": "^sessions/[a-zA-Z0-9_.-]+\\.jsonl$" },
         "handover": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
-        "export": { "$ref": "#/$defs/export" }, "stopReason": { "enum": [null, "completed", "context-limit"] },
+        "export": { "$ref": "#/$defs/export" }, "stopReason": { "enum": [null, "completed", "context-limit", "success", "failure"] },
         "review": { "enum": ["not-submitted", "pending", "decided"] },
         "reviewedAt": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
         "retryReason": { "type": "null" }, "planRevision": { "$ref": "#/$defs/markdown" }

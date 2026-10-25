@@ -121,7 +121,7 @@ export class PiAdapter {
         workflow.createWorkflowExtension(Type, personality.availableTools,
           async (callId: string, name: string, args: Raw) => {
             if (this.fatal) throw new Error("Run halted");
-            if (contextHandback && name === "submit_handover" && args.stopReason !== "context-limit") throw new Error("Context handback must use context-limit");
+            if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error("Context handback must use context-limit");
             return this.workflow.action(personality.role, sessionId, callId, name, args);
           }),
         (pi: ExtensionAPI) => { pi.on("session_before_compact", () => ({ cancel: true })); },
@@ -149,12 +149,12 @@ export class PiAdapter {
     const oldBefore = session.agent.beforeToolCall;
     session.agent.beforeToolCall = async (context, signal) => {
       if (this.fatal || signal?.aborted) return { block: true, reason: "Run halted" };
-      const terminal = ["assign_subagent", "submit_handover", "finish_run"];
+      const terminal = ["spawn_subagent", "finish_task", "finish_request"];
       const calls = context.assistantMessage.content.filter((c) => c.type === "toolCall");
       if (calls.some((c) => terminal.includes(c.name)) && calls.length !== 1) {
         return { block: true, reason: "Yielding workflow tools must be called alone" };
       }
-      if (contextHandback && context.toolCall.name !== "submit_handover") return { block: true, reason: "Handback required" };
+      if (contextHandback && context.toolCall.name !== "finish_task") return { block: true, reason: "Handback required" };
       return oldBefore?.(context, signal);
     };
     let current: Inference | null = null;
@@ -202,8 +202,8 @@ export class PiAdapter {
         try {
           await session.prompt(prompt);
           if (contextHandback && personality.role === "subagent" && this.workflow.state.phase === "executing" && !this.fatal) {
-            session.setActiveToolsByName(["submit_handover"]);
-            await session.prompt("The application context guard requires handback now. Call submit_handover alone with stopReason context-limit and the complete required Markdown. Do not continue the assignment.");
+            session.setActiveToolsByName(["finish_task"]);
+            await session.prompt("The application context guard requires handback now. Call finish_task alone with stopReason context-limit and the complete required Markdown. Do not continue the assignment.");
           }
           if (this.fatal) throw new Error("Run halted");
           const last = session.messages.filter((message) => message.role === "assistant").at(-1);

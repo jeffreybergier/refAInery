@@ -142,7 +142,9 @@ function runDetails(run) {
   section.append(history);
   if (run.production) {
     if (checkpoint.failure) section.append(element("p", "text-warning", checkpoint.failure));
-    if (checkpoint.resultSummary) section.append(disclosure("Final outcome summary", checkpoint.resultSummary));
+    if (checkpoint.resultSummary) section.append(disclosure(
+      checkpoint.status === "waiting-for-user" ? "Question for user" : "Final outcome summary",
+      checkpoint.resultSummary));
     const plans = element("details", "my-3");
     plans.append(element("summary", "", `Plan history (${run.plans.length})`));
     for (const plan of run.plans) plans.append(disclosure(`${plan.path} · ${plan.turnId}`, plan.document?.text ?? "Unavailable"));

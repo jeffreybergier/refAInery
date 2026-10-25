@@ -35,7 +35,7 @@ assert.equal(sessions.length, 2);
 const entries = (await Promise.all(sessions.map(file => readFile(store.path('runs', result.runId, 'sessions', file), 'utf8'))))
   .flatMap(text => text.trim().split('\n').map(line => JSON.parse(line)));
 const tools = entries.filter(e => e.type === 'message' && e.message.role === 'toolResult');
-for (const name of ['update_plan', 'assign_subagent', 'write', 'read', 'edit', 'bash', 'submit_handover', 'finish_run']) {
+for (const name of ['update_plan', 'spawn_subagent', 'write', 'read', 'edit', 'bash', 'finish_task', 'finish_request']) {
   assert.ok(tools.some(e => e.message.toolName === name && !e.message.isError), name);
 }
 for (const mode of ['test', 'prod']) {
@@ -54,6 +54,35 @@ for (const mode of ['test', 'prod']) {
   } finally {
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   }
+}
+// Exercise every new outcome through the real Pi schemas and runner, including
+// questions before dispatch. Keep these separate from the browser dataset.
+for (const [name, outcome, stopReason, beforeDispatch] of [
+  ['worker-failure', 'failure', 'failure', false],
+  ['context-handback', 'failure', 'context-limit', false],
+  ['question-after-review', 'question', 'success', false],
+  ['question-before-dispatch', 'question', null, true],
+  ['failure-before-dispatch', 'failure', null, true],
+]) {
+  const root = join(storage, name);
+  await mkdir(root);
+  const finish = { ...scenario.responses.at(-1), arguments: {
+    outcome, summary: 'Which target should be used?', rationale: 'Essential target missing.',
+  } };
+  const responses = beforeDispatch ? [scenario.responses[0], finish]
+    : scenario.responses.map(step => step.tool === 'finish_request' ? finish
+      : step.tool === 'finish_task' ? { ...step, arguments: { ...step.arguments, stopReason } } : step);
+  const result = await runOnce({ ...options, storage: root, scenario: { ...scenario, responses } });
+  assert.equal(result.outcome, outcome === 'question' ? 'waiting-for-user' : 'failed');
+  const data = await loadProduction(new Store(root));
+  const state = data.runs[0].checkpoints.at(-1);
+  assert.equal(state.phase, outcome === 'question' ? 'waiting-for-user' : 'ended');
+  assert.equal(state.endedAt === null, outcome === 'question');
+  assert.equal(state.resultSummary, finish.arguments.summary);
+  assert.equal(state.orchestrator.export.state, 'saved');
+  assert.equal(state.tasks.length, beforeDispatch ? 0 : 1);
+  assert.equal(data.inferences.length, responses.length);
+  if (!beforeDispatch) assert.equal(state.tasks[0].attempts[0].stopReason, stopReason);
 }
 // Scripted errors use the real interruption path too; keep them out of the
 // completed dataset used by the browser checks.

@@ -46,8 +46,21 @@ deadline per prompted phase. Long-context handback is not live-validated.
 
 The application binds caller role/session identity to these tools:
 
-- Orchestrator: `update_plan`, `assign_subagent`, `finish_run`.
-- Worker: `submit_handover`, plus its configured file/shell/web capabilities.
+- Orchestrator: `update_plan`, `spawn_subagent`, `finish_request`.
+- Worker: `finish_task`, plus its configured file/shell/web capabilities.
+
+Worker stop reasons are `success`, `failure`, and `context-limit`. These report
+why the attempt stopped, not independent verification of the request. Request
+outcomes are `success`, `failure`, and `question`; the first two produce
+`completed` and `failed` run statuses. Failure or a question may be reported
+before dispatch when work cannot begin; success still requires worker review.
+
+A question persists the plan, question (`resultSummary`), and orchestrator
+session export, then saves status/phase `waiting-for-user` without an end
+timestamp. It stops execution and blocks new dispatch just like other unfinished
+runs. It is not completion or an interruption. Answer ingestion and resuming a
+paused run are not implemented yet; operator intervention is required. No
+process or inference remains running while waiting.
 
 The application owns dispatch and persistence. Plans are saved before assignment
 or finalization. A yielding workflow tool must be the only tool call in its
