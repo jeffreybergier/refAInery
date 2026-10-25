@@ -9,6 +9,7 @@ import type { Registry } from "./registry.ts";
 import type { Personality } from "./config.ts";
 import type { Workflow } from "./workflow.ts";
 import type { Sandbox } from "./sandbox.ts";
+import { piExportDocument } from "./pi-export.ts";
 
 type Raw = Record<string, unknown>;
 export interface Inference {
@@ -201,21 +202,14 @@ export class PiAdapter {
   }
 }
 
-export function staticTranscriptHTML(messages: unknown): string {
-  const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-  return '<section style="padding:2rem"><h1>Saved Pi session</h1><p>refAInery static active-branch transcript. The original Pi viewer is retained below, but scripts are disabled on this server.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">' +
-    escape(JSON.stringify(messages, null, 2)) + '</pre></section>';
-}
-
 export async function exportSession(store: Store, prefix: string, session: AgentSession, name: string) {
   // Pi writes its export; only publish an immutable durable file after success.
   const temp = store.path(prefix, "pi-private", `${name}.html`);
   await session.exportToHtml(temp);
   const native = await readFile(temp, "utf8");
-  if (!native.includes("<body>")) throw new Error("Unsupported Pi export template");
-  const content = native.replace("<body>", "<body>" + staticTranscriptHTML(session.messages));
+  if (piExportDocument(native)?.content !== native) throw new Error("Unsupported Pi export template");
   const path = `exports/${name}.html`;
-  await publish(store.path(prefix, path), content);
+  await publish(store.path(prefix, path), native);
   if (session.sessionFile) {
     const handle = await open(session.sessionFile, "r");
     try { await handle.sync(); } finally { await handle.close(); }

@@ -5,6 +5,7 @@ import { loadWorkflowPreview, readWorkflowDocument } from "./workflow-preview.ts
 import type { PreviewDirectories } from "./preview.ts";
 import { Store, safeRead } from "./backend/storage.ts";
 import { loadProduction } from "./backend/workflow.ts";
+import { piExportDocument, SCRIPT_FREE_DOCUMENT_POLICY } from "./backend/pi-export.ts";
 
 // Explicit routes keep source, configuration, and credentials out of the web root.
 const assets = new Map([
@@ -72,9 +73,10 @@ export function createAppServer(preview?: PreviewDirectories, production?: Store
           response.writeHead(404); response.end(); return;
         }
         const content = await safeRead(production.root, `runs/${runId}/${path}`);
-        response.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        const exported = path.startsWith("exports/") && path.endsWith(".html") ? piExportDocument(content) : null;
+        response.setHeader("Content-Security-Policy", exported?.policy ?? SCRIPT_FREE_DOCUMENT_POLICY);
         response.writeHead(200, { "Content-Type": path.endsWith(".md") ? "text/plain; charset=utf-8" : "text/html; charset=utf-8" });
-        response.end(request.method === "HEAD" ? undefined : content);
+        response.end(request.method === "HEAD" ? undefined : exported?.content ?? content);
       } catch {
         response.writeHead(503); response.end(request.method === "HEAD" ? undefined : "Production document unavailable\n");
       }

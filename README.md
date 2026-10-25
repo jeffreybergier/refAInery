@@ -154,8 +154,11 @@ Transcript links open separate tabs containing explicitly labeled sample HTML,
 not actual Pi exports. Only files referenced by validated fixture tasks can be
 served; symlink escapes and arbitrary paths are rejected. Responses use a
 script-free CSP sandbox with an opaque origin. No agent HTML is embedded into
-the control room. The supervised backend generates real Pi exports with an added
-escaped static transcript for script-free browser inspection.
+the control room. The supervised backend publishes Pi's native HTML exports
+unchanged. Recognized exports use an opaque-origin sandbox permitting only the
+pinned viewer scripts and fixed handlers by hash, with no network access. The
+first milestone's injected JSON preamble is removed only when serving those old
+exports; saved history is not rewritten. See `docs/supervised-milestone.md`.
 
 ## Production storage and workflow
 

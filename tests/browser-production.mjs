@@ -33,11 +33,27 @@ try {
   assert.match(await inspector.textContent(),/Decision recorded/);
   assert.match(await inspector.textContent(),/Markdown handover/);
   const link=await inspector.locator('a.transcript-link').getAttribute('href');
-  const exported=await browser.newPage();const response=await exported.goto(origin+link);
-  assert.match(response.headers()['content-security-policy'],/sandbox;/);
-  assert.ok(await exported.getByRole('heading',{name:'Saved Pi session',exact:true}).isVisible());
-  assert.match(await exported.locator('body').textContent(),/milestone/);
-  await exported.close();
+  const documents=(await (await fetch(origin+'/api/v1/preview')).json()).documents.filter(d=>d.kind==='html');
+  assert.ok(documents.some(d=>d.url===link));
+  assert.ok(documents.some(d=>d.path==='exports/orchestrator.html'));
+  for(const doc of documents) {
+    const exported=await browser.newPage();exported.on('pageerror',e=>errors.push(e.message));
+    const response=await exported.goto(origin+doc.url);
+    assert.match(response.headers()['content-security-policy'],/^sandbox allow-scripts allow-downloads;/);
+    await exported.waitForSelector('#header-container h1');
+    assert.match(await exported.locator('#header-container h1').textContent(),/^Session:/);
+    assert.ok(await exported.locator('#messages .assistant-message').count()>0);
+    assert.ok(await exported.locator('.tree-node').count()>0);
+    assert.match(await exported.locator('#messages').textContent(),/milestone/);
+    assert.equal(await exported.getByRole('heading',{name:'Saved Pi session',exact:true}).count(),0);
+    await exported.getByRole('button',{name:'Toggle tools',exact:true}).click();
+    assert.equal(await exported.getByRole('button',{name:'Toggle tools',exact:true}).getAttribute('aria-pressed'),'true');
+    const tool=exported.locator('.tool-item[onclick]').first();
+    await tool.click();assert.match(await tool.getAttribute('class'),/params-expanded/);
+    const download=exported.waitForEvent('download');
+    await exported.getByRole('button',{name:'↓ JSONL',exact:true}).click();await download;
+    await exported.close();
+  }
   await page.locator('#refresh-preview').click();await page.waitForFunction(()=>!document.querySelector('#refresh-preview').disabled);
   assert.equal(await page.locator('.floor-bar[aria-pressed="true"]').count(),1);
   for(const width of [1280,375]) {
@@ -46,7 +62,7 @@ try {
   }
   assert.deepEqual(errors,[]);
   if(process.env.REFAINERY_SCREENSHOT) await page.screenshot({path:process.env.REFAINERY_SCREENSHOT,fullPage:true});
-  console.log('Production browser passed: real timeline, plan history, model identities, handover, decision, sandboxed static Pi export, refresh and mobile layout.');
+  console.log('Production browser passed: real timeline, plan history, model identities, handover, decision, native Pi viewers, controls and JSONL downloads, refresh and mobile layout.');
 } finally {
   await browser?.close();await new Promise(r=>{server.close(r);server.closeAllConnections()});
 }

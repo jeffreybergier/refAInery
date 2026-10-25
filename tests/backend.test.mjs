@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { Store, identity, now, names } from '../source/backend/storage.ts';
 import { Registry, validateCatalog } from '../source/backend/registry.ts';
 import { Workflow, enqueue, queuedRequests, loadProduction, notDue } from '../source/backend/workflow.ts';
-import { observeProvider, staticTranscriptHTML, PiAdapter } from '../source/backend/pi.ts';
+import { observeProvider, PiAdapter } from '../source/backend/pi.ts';
 import { createAppServer } from '../source/server.ts';
 import { workflowPresentation } from '../source/public/workflow.js';
+import { nativeExport, withLegacyFallback } from './helpers/pi-export.mjs';
 
 const configuration = () => ({ id: identity('config'), personalities: [], extensions: [], sdkVersion: '1.4.0',
   toolCatalogVersion: 'refainery-tools-v1', models: [{id:'default',provider:'openrouter',modelId:'requested-alias',contextWindow:250000}], orchestratorModel:'default' });
@@ -121,6 +122,24 @@ test('production API serves only referenced documents, never sessions; corruptio
   assert.equal((await fetch(base+'/api/v1/preview')).status,503);
 });
 
+test('production route repairs legacy Pi presentation only; HEAD agrees and Markdown stays script-free',async(t)=>{
+  const {store,flow}=await handback(t), {html}=await nativeExport(store.root);
+  const file=store.path(flow.prefix,'exports/worker.html'), legacy=withLegacyFallback(html);
+  await writeFile(file,legacy);
+  const server=createAppServer(undefined,store);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${server.address().port}/production/v1/documents/${flow.state.runId}/`;
+  const get=await fetch(base+'exports/worker.html'),head=await fetch(base+'exports/worker.html',{method:'HEAD'});
+  assert.equal(get.status,200);assert.equal(await get.text(),html);
+  assert.match(get.headers.get('content-security-policy'),/^sandbox allow-scripts allow-downloads;/);
+  assert.equal(head.headers.get('content-security-policy'),get.headers.get('content-security-policy'));
+  assert.equal(await head.text(),'');assert.equal(await readFile(file,'utf8'),legacy);
+  assert.match((await fetch(base+'plans/000001.md')).headers.get('content-security-policy'),/^sandbox;/);
+  assert.equal((await fetch(base+'pi-private/orchestrator.html')).status,404);
+  await writeFile(file,html.replace('<body>','<body><script>window.pwned=1</script>'));
+  assert.match((await fetch(base+'exports/worker.html')).headers.get('content-security-policy'),/^sandbox;/);
+});
+
 test('missing stopped Pi session is an error, not a transcript-based fallback',async(t)=>{
   const {store,flow}=await handback(t);
   await rm(store.path(flow.prefix,'sessions/worker.jsonl'));
@@ -165,11 +184,6 @@ test('registry rejects partial catalogs and preserves unavailable-price sentinel
   const store=await setup(t);
   const reg=new Registry(store,'https://openrouter.ai/api/v1/models',async()=>Response.json({...catalog(),links:{next:'more'}}));
   await reg.refresh();assert.equal(reg.current,null);assert.equal(reg.reference().registryFreshness,'unavailable');
-});
-
-test('static HTML transcript escapes executable agent content',()=>{
-  const html=staticTranscriptHTML([{role:'assistant',content:'</pre><script>alert(1)</script>'}]);
-  assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));
 });
 
 test('registry timer refreshes while idle after one hour, not before',async(t)=>{

@@ -154,12 +154,28 @@ observations are not a promise of instantaneous provider prices or exact charges
 Provider-reported USD cost is stored separately; no total is computed using binary
 floating-point arithmetic in the application.
 
-Pi owns the conversation files. The unmodified native HTML export remains under
-`pi-private/`; the referenced public export adds an escaped static active-branch
-transcript. This makes it readable under the existing script-free, opaque-origin
-CSP sandbox without enabling the native viewer's JavaScript. Only referenced
-plans, handovers and exports are served; sessions, workspace files, credentials,
-and arbitrary paths are not web routes.
+Pi owns the conversation files. The backend explicitly calls
+`session.exportToHtml()` and publishes the resulting native HTML byte-for-byte;
+HTML is not an automatically created session artifact. The intermediate copy
+remains under `pi-private/`. There is no injected JSON transcript.
+
+Only recognized exports matching the installed, pinned Pi template receive a
+viewer-specific CSP. Script hashes come from that trusted template, never from
+agent-generated HTML. The opaque-origin sandbox permits its four bundled scripts
+and three fixed click handlers (expand content, expand tool parameters, download
+session JSONL), plus downloads for the native JSONL button. It does not grant
+same-origin access, arbitrary scripts/eval, network requests, frames, forms, or
+popups. Data-URL images and inline styles support native rendering. Unknown HTML
+and fixture exports remain script-free. SDK upgrades must pass the native-viewer
+and security browser tests before deployment.
+
+For exports saved before this fix, the server removes only the known injected
+JSON preamble from the HTTP representation, then validates the native template.
+It does not rewrite immutable history, regenerate sessions, or call a model.
+Restart an already-running server to apply the route/policy fix; existing export
+URLs then work unchanged. Only referenced plans, handovers and exports are served;
+sessions, private exports, workspace files, credentials, and arbitrary paths are
+not web routes.
 
 ## Failure and recovery boundaries
 
@@ -203,8 +219,14 @@ Optional browser checks use an externally installed Playwright:
 PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
 REFAINERY_STORAGE_DIR=build/my-supervised-run \
 node tests/browser-production.mjs
+
+# Self-contained native export/rendering and browser security regression:
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+node tests/browser-pi-export.mjs
 ```
 
 That check reads a completed deterministic milestone using the configured example
-model; it makes no model calls. The existing `browser-intake.mjs` and
-`browser-floor.mjs` continue to cover the offline previews.
+model; it makes no model calls. It verifies both native viewers, rendered
+messages, viewer controls, and JSONL downloads—not a substitute transcript. The
+existing `browser-intake.mjs` and `browser-floor.mjs` continue to cover the offline
+previews.
