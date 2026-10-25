@@ -178,10 +178,12 @@ not implemented.
 `schemas/config/v1/agent.schema.json` defines self-contained agent JSON files
 with embedded instructions and explicit `availableTools` allowlists. The sibling
 `refAInery-config/prod/agents/` contains initial orchestrator and worker definitions.
-These are separate from models, sessions, and preview fixtures. Production loading
-and tool enforcement are not implemented; the orchestrator deliberately has no
-tools until the workflow tool contract is defined. See `schemas/config/v1/README.md`
-and `SPEC.md` section 5.4.
+These are separate from models, sessions, and preview fixtures. Both personalities
+allow provider-native `web_search`; the worker also allows `web_fetch` and Pi's
+standard read/write/edit/bash tools. The config repo includes a permission-scoped
+web extension adapted from the operator's Pi setup. Production loading, tool
+enforcement, and workflow tools are not implemented. See
+`schemas/config/v1/README.md` and `SPEC.md` section 5.4.
 
 ## Container launch
 

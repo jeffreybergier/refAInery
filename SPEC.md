@@ -384,12 +384,20 @@ personality ID. Configuration edits affect future runs only; recovery must not
 silently substitute changed tool implementations. The enclosing snapshot schema,
 loader, catalog, and enforcement are not implemented yet.
 
-The initial config repository contains orchestrator and worker personalities.
-The orchestrator has no tools pending the workflow tool contract. The worker
-requests `read`, `write`, `edit`, and `bash`; these are intended catalog IDs, not
-implemented server capabilities. These definitions are not activated by the
-current server. See `schemas/config/v1/README.md` for structural versus runtime
-validation requirements.
+The config repository contains orchestrator and worker personalities. Both allow
+`web_search`. The worker additionally allows `web_fetch` and Pi's standard `read`,
+`write`, `edit`, and `bash` tools; the orchestrator has no file/shell access.
+The reviewed `prod/extensions/web-search.ts` adapts the operator's existing
+provider-native web extension to take an explicit, frozen session allowlist.
+These web capabilities modify provider payloads rather than register local tools.
+The future server catalog must distinguish native capabilities from local tools,
+validate provider support, and disable ambient extension discovery. A later or
+unreviewed extension must not be able to silently re-enable denied capabilities.
+
+These definitions are not activated by the current server. Workflow tools and
+production loading/enforcement remain pending; provider-native web behavior still
+needs live verification. See `schemas/config/v1/README.md` and the configuration
+repository's `prod/extensions/README.md` for validation and loading contracts.
 
 ## 6. Checkpoints — saved run state
 

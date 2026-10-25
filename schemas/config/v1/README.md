@@ -46,11 +46,18 @@ The enclosing configuration/snapshot schemas and tool catalog remain undefined.
 ## Initial definitions
 
 The sibling configuration repository contains `orchestrator.json` and
-`worker.json`. The orchestrator deliberately has no tools until the workflow tool
-contract is defined. The worker requests `read`, `write`, `edit`, and `bash`;
-these names are intended catalog IDs, not proof that a server implementation or
-sandbox exists. Neither definition is execution-ready merely because it passes
-structural validation. The backend must validate all tool references before use.
+`worker.json`. Both allow `web_search`. The worker additionally allows `web_fetch`
+and Pi's standard `read`, `write`, `edit`, and `bash` tools. Workflow tool
+implementations remain pending. The reviewed `prod/extensions/web-search.ts`
+provides session-scoped provider-native search/fetch declarations, not local Pi
+tool registrations. The future server catalog must distinguish native provider
+capabilities from local tools and validate transport support before use.
+
+Neither definition is execution-ready merely because it passes structural
+validation. The backend must resolve every tool/capability, explicitly select
+local Pi tools, and load only reviewed extensions with the frozen allowlist.
+Ambient extensions must not be allowed to re-enable denied capabilities. See the
+config repository's `prod/extensions/README.md` for the web extension contract.
 
 The runtime loader, policy enforcement, tool catalog, run snapshots, and Pi
 integration are not implemented by this schema slice.
