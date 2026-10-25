@@ -159,6 +159,14 @@ the orchestrator's model; the orchestrator selects each subagent's model from
 that list. The context window is capacity, not an exact handover trigger; the Pi
 integration must leave room for handover and verify backend support.
 
+The backend must persist `requestedModel` and provider-reported `actualModel`
+per inference call, with unknown/unresolved identities explicit. It must also
+fetch the model registry at startup and every hour, durably retain immutable
+catalog/pricing snapshots, and expose refresh failures and stale prices. Calls
+reference the snapshot current at dispatch so new prices do not rewrite history;
+registry estimates remain separate from provider-reported costs. See `SPEC.md`
+sections 5.1–5.3. These requirements are not yet implemented.
+
 The production storage implementation remains limited to the request JSON
 Schema and fictional example (the v1 dashboard adds provisional workflow fixtures):
 `schemas/storage/v1/request.schema.json` and `examples/storage/v1/request.json`.

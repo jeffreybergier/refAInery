@@ -39,7 +39,17 @@ Related agreed design in `SPEC.md` (not additional implemented schemas):
   `contextWindow: 250000`. This capacity must leave room for handover; it is not
   an exact handover trigger. Each subagent assignment records its selected model.
 
-These fields belong in future run/configuration/attempt records, not requests.
+- Each inference call preserves `requestedModel` and provider-reported
+  `actualModel` separately, including unknown/unresolved actual identities.
+  Attempts may reference calls with different actual models.
+- Startup and hourly registry fetches retain immutable catalog/pricing snapshots
+  plus refresh status. Each inference references its dispatch-time snapshot;
+  stale/unavailable prices and provider-reported costs remain explicit and
+  separate from registry-derived estimates. See `SPEC.md` sections 5.1–5.3.
+
+These fields belong in future run/configuration/attempt/inference records and
+registry snapshots, not requests. Registry schemas and refresh behavior are not
+implemented by this request-schema slice.
 
 The `/v1` dashboard now previews this **full agreed workflow**, using separate
 provisional fixtures documented in `source/fixtures/README.md`. Its restored

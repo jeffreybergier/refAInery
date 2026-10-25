@@ -1,6 +1,6 @@
 # refAInery — working specification
 
-**Updated:** 2026-10-24
+**Updated:** 2026-10-25
 
 This document covers the implemented web preview and the storage/workflow model
 agreed so far. It is not a roadmap for a larger agent platform.
@@ -273,6 +273,94 @@ Proposed configuration shape (identifiers are placeholders, not a final schema):
 
 A subagent assignment would record `"model": "default"`.
 
+### 5.1 Requested and actual model identity
+
+Persist both identities for every inference call, including orchestrator calls,
+subagent calls, and retries, rather than only once per run or agent session:
+
+- `requestedModel`: the exact model identifier sent to the provider, preserving
+  aliases and routing syntax. Save it before dispatch; never replace it with the
+  resolved model. Keep the provider identity separately to disambiguate names.
+- `actualModel`: the model identifier reported by the provider for that call.
+  Initially `null`; leave it unknown if a failure, interruption, or adapter
+  limitation prevents observation. Never infer it from the requested identifier,
+  registry contents, or the model's own generated text.
+- Retain the provider response/generation ID and the source of the reported model
+  when available, so later reconciliation is possible. If the provider reports
+  only an alias, preserve it but explicitly mark resolution as unresolved; do not
+  claim that it identifies immutable weights or a specific underlying revision.
+- Each retry is a separate inference call. A session may use multiple actual
+  models; attempt/run summaries must not hide that behind one model label.
+
+The dashboard must show requested and actual models separately, with an explicit
+unknown/unresolved state. These identities belong in future inference records
+referenced by attempts and checkpoints, not in immutable intake requests.
+Freezing configuration freezes the requested selection, not a provider's alias
+mapping. No application-selected fallback is allowed silently.
+
+The Pi spike must verify that the adapter exposes the provider-reported identity,
+not merely an echo of the configured model. The selected identifier's routing
+semantics also require verification; its spelling alone is not evidence.
+
+### 5.2 Hourly model registry snapshots
+
+The production server owns registry refresh independently of agent execution or
+browser refresh. Fetch the configured `MODEL_REGISTRY` at startup and every hour
+(3,600 seconds) while running, including while the factory is idle. Use bounded
+request timeouts and one in-flight refresh; do not overlap fetches or queue a
+backlog of missed hourly ticks. Test preview mode stays offline.
+
+Persist every successfully validated full catalog as an immutable snapshot in
+production storage, including unchanged successful hourly observations. A snapshot
+records a stable ID, schema version, provider, credential-free source endpoint,
+UTC fetch time, and model entries with provider identifiers, capabilities,
+context limits, and pricing. Preserve pricing decimal strings and their currency
+and units, including cache or other pricing categories when supplied. Missing
+prices remain unknown, never zero. Do not save authentication headers or secrets.
+Complete all pages if the configured API paginates; a partial catalog is not a
+successful refresh.
+
+Use the application-owned writer and durable atomic publication. Publish the
+new current snapshot only after validation and persistence succeed; retain older
+snapshots for historical interpretation. A current-snapshot pointer is a
+rebuildable index, not the sole copy of the catalog. Registry refreshes do not
+change a running workflow's frozen allowed models or context configuration.
+
+Persist refresh status separately: last attempt, last successful persisted fetch,
+next scheduled attempt, and a sanitized failure category. On network, validation,
+or persistence failure, retain the last good snapshot and expose degraded status.
+Its prices become stale once the last successful fetch is an hour old. With no
+valid snapshot, prices are unavailable. Retry transient failures with bounded
+backoff without losing the hourly schedule; recovery/restart reloads persisted
+history and immediately attempts a fresh fetch. Never label a failed refresh as
+current data. Hourly polling cannot guarantee instantaneous provider prices.
+
+### 5.3 Price provenance and reported costs
+
+Each inference call records `registrySnapshotId` for the persisted catalog
+current at dispatch (or `null` when unavailable), along with its freshness at
+that time. Use the reported actual model to look up estimated prices in that
+snapshot; unresolved identities or missing entries remain unpriced. Never
+substitute an alias's price or a different model's price silently.
+
+Registry-derived amounts are estimates, not proof of the amount charged. Preserve
+provider-reported cost, currency/unit, and usage separately when available; missing
+cost is unknown, not free. Do not overwrite provider-reported costs with local
+estimates. Calculations must preserve decimal precision and document cache and
+other applicable pricing assumptions. An hourly refresh must not retroactively
+reprice old calls; any current-price comparison is a separately labeled view.
+Snapshot fetch time records when we observed prices, not their effective date.
+
+Implementation checks must cover different requested/actual models, absent or
+unresolved actual identities, multiple actual models within a session, retries,
+startup/hourly/idle refreshes, unchanged catalogs, invalid or partial responses,
+timeouts, write failure, stale/no-catalog states, restart, non-overlapping refresh,
+and historical snapshot references remaining unchanged after new prices arrive.
+
+These are agreed backend requirements, not implemented schemas or runtime
+behavior. The production registry refresher, durable registry/inference writers,
+and dashboard presentation remain to be implemented with the Pi/backend slice.
+
 ## 6. Checkpoints — saved run state
 
 A **checkpoint** is a complete saved snapshot of where a run stands. It lets the
@@ -322,5 +410,6 @@ Pi owns its conversation files; our records reference them rather than redefine
 their contents. A checkpoint is not a transcript or a workspace backup.
 
 **Next schemas remain to be defined one at a time:** the queue, run checkpoints,
-configuration/model choices, and subagent assignments/results. Their exact fields,
+configuration/model choices, subagent assignments/results, per-inference model
+identity, and registry snapshots/refresh status. Their exact fields,
 file layout, and crash-safe persistence are not implemented yet.
