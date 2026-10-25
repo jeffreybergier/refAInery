@@ -8,6 +8,8 @@ import { modelConfiguration } from '../source/environment.ts';
 import { Store } from '../source/backend/storage.ts';
 import { loadProduction } from '../source/backend/workflow.ts';
 import { createAppServer } from '../source/server.ts';
+import { orchestratorText } from '../source/agents/orchestrator.ts';
+import { subagentText } from '../source/agents/subagent.ts';
 
 const storage = process.env.REFAINERY_CHECK_STORAGE;
 assert.ok(storage, 'check.sh supplies disposable storage');
@@ -96,6 +98,64 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
   assert.equal(data.inferences.length, responses.length);
   if (!beforeDispatch) assert.equal(state.tasks[0].attempts[0].stopReason, stopReason);
 }
+// Exercise nonempty prompt slots without putting test prose in agent defaults.
+const originalOrchestratorText = structuredClone(orchestratorText);
+const originalSubagentText = structuredClone(subagentText);
+try {
+  Object.assign(orchestratorText, { firstPrompt: 'Test initial orchestrator guidance',
+    firstReply: 'Test orchestrator seed', finalAnswer: 'Test orchestrator completion reminder',
+    subagentReview: 'Test handover review guidance' });
+  Object.assign(subagentText, { firstPrompt: 'Test initial worker guidance',
+    firstReply: 'Test worker seed', finalAnswer: 'Test worker completion reminder' });
+  for (const repair of [false, true]) {
+    const root = join(storage, repair ? 'text-only-repair' : 'no-spurious-reminder');
+    await mkdir(root);
+    const responses = scenario.responses.flatMap(step => repair &&
+      ['spawn_subagent', 'finish_task', 'finish_request'].includes(step.tool)
+      ? [{ agent: step.agent, text: 'A text-only final answer without the required tool.' }, step] : [step]);
+    const result = await runOnce({ ...options, storage: root, scenario: { ...scenario, responses } });
+    assert.equal(result.outcome, 'completed');
+    const store = new Store(root), saved = await loadProduction(store);
+    assert.equal(saved.inferences.length, responses.length); // Seeds are not model calls.
+    const state = saved.runs[0].checkpoints.at(-1);
+    assert.equal(state.configuration.agentText.orchestrator.firstReply, orchestratorText.firstReply);
+    for (const [sessionPath, text, reminderCount] of [
+      [state.orchestrator.sessionPath, orchestratorText, repair ? 2 : 0],
+      [state.tasks[0].attempts[0].sessionPath, subagentText, repair ? 1 : 0],
+    ]) {
+      const messages = (await readFile(store.path('runs', result.runId, sessionPath), 'utf8'))
+        .trim().split('\n').map(line => JSON.parse(line)).filter(entry => entry.type === 'message').map(entry => entry.message);
+      const content = message => typeof message.content === 'string' ? message.content
+        : message.content.filter(part => part.type === 'text').map(part => part.text).join('');
+      const seeds = messages.filter(message => message.role === 'assistant' && message.provider === 'refainery');
+      assert.equal(seeds.length, 1);
+      assert.equal(content(seeds[0]), text.firstReply);
+      const firstUser = messages.findIndex(message => message.role === 'user');
+      assert.ok(content(messages[firstUser]).startsWith(text.firstPrompt));
+      assert.equal(messages[firstUser + 1], seeds[0]);
+      assert.equal(messages.filter(message => message.role === 'user' && content(message) === text.finalAnswer).length, reminderCount);
+      if (text === orchestratorText) assert.ok(messages.some(message => message.role === 'user' &&
+        content(message).startsWith(orchestratorText.subagentReview)));
+    }
+  }
+  // Two text-only stops exhaust the single reminder; no implicit completion.
+  for (const [name, responses] of [
+    ['orchestrator-ignores-reminder', [{ agent: 'orchestrator', text: 'Done' }, { agent: 'orchestrator', text: 'Still done' }]],
+    ['worker-ignores-reminder', [...scenario.responses.slice(0, 2),
+      { agent: 'worker', text: 'Done' }, { agent: 'worker', text: 'Still done' }]],
+  ]) {
+    const root = join(storage, name);
+    await mkdir(root);
+    await assert.rejects(runOnce({ ...options, storage: root, scenario: { ...scenario, responses } }), /Milestone incomplete/);
+    const saved = await loadProduction(new Store(root));
+    assert.equal(saved.inferences.length, responses.length);
+    assert.equal(saved.runs[0].checkpoints.at(-1).phase, 'recovery-required');
+  }
+} finally {
+  Object.assign(orchestratorText, originalOrchestratorText);
+  Object.assign(subagentText, originalSubagentText);
+}
+
 // Scripted errors use the real interruption path too; keep them out of the
 // completed dataset used by the browser checks.
 for (const [name, responses] of [

@@ -57,7 +57,7 @@ export async function loadConfiguration(root: string) {
     const code = await readFile(new URL(`../extensions/${name}.ts`, import.meta.url), "utf8");
     extensions.push({ name, code, sha256: createHash("sha256").update(code).digest("hex") });
   }
-  const agentText = { shared: sharedText, orchestrator: orchestratorText, subagent: subagentText };
+  const agentText = structuredClone({ shared: sharedText, orchestrator: orchestratorText, subagent: subagentText });
   return { personalities, agentText, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };
 }
 export type Configuration = Awaited<ReturnType<typeof loadConfiguration>>;

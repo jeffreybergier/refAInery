@@ -5,8 +5,8 @@ import { Workflow, enqueue, queuedRequests, notDue, type Checkpoint } from "./wo
 import { PiAdapter, exportSession } from "./pi.ts";
 import { Sandbox } from "./sandbox.ts";
 import { ScriptedResponses, type Scenario } from "./scenario.ts";
-import { planningPrompt, reviewPrompt } from "../agents/orchestrator.ts";
-import { assignmentPrompt } from "../agents/subagent.ts";
+import { firstPrompt as orchestratorFirstPrompt, subagentReview } from "../agents/orchestrator.ts";
+import { firstPrompt as subagentFirstPrompt } from "../agents/subagent.ts";
 
 export interface RunOptions {
   storage: string; config: string; prompt: string; selectedModel: string;
@@ -66,7 +66,7 @@ export async function runOnce(options: RunOptions) {
     await engine.save();
     stage("orchestrator-planning");
     await engine.beginTurn();
-    await orchestrator.prompt(planningPrompt(request.prompt));
+    await orchestrator.prompt(orchestratorFirstPrompt(request.prompt, config.agentText.orchestrator.firstPrompt));
     await engine.endTurn();
     if (engine.state.pendingAction?.kind === "assign") {
       stage("worker-starting");
@@ -83,7 +83,7 @@ export async function runOnce(options: RunOptions) {
       engine.state.phase = "executing";
       await engine.save(); // Dispatch intent saved before calling Pi.
       stage("worker-executing");
-      await worker.prompt(assignmentPrompt(assignment));
+      await worker.prompt(subagentFirstPrompt(assignment, config.agentText.subagent.firstPrompt));
       let attempt = engine.state.tasks.at(-1)!.attempts.at(-1)!;
       attempt.endedAt = now();
       if (!attempt.handover) throw new Error("Worker stopped without a handover");
@@ -104,7 +104,7 @@ export async function runOnce(options: RunOptions) {
       const handover = await safeRead(store.root, `${engine.prefix}/${attempt.handover}`);
       stage("orchestrator-reviewing");
       await engine.beginTurn();
-      await orchestrator.prompt(reviewPrompt(attempt, handover));
+      await orchestrator.prompt(subagentReview(attempt, handover, config.agentText.orchestrator.subagentReview));
       await engine.endTurn();
     }
     const decision = engine.state.pendingAction as Checkpoint["pendingAction"];

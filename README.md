@@ -105,6 +105,12 @@ instructions and prompts in the marked top sections of `source/agents/shared.ts`
 have equivalent sections in `source/extensions/workflow.ts` and
 `source/backend/workflow.ts`.
 
+Each role has editable `instructions`, `firstPrompt`, `firstReply`, and
+`finalAnswer` slots; the orchestrator also has `subagentReview`. `firstReply`
+seeds assistant-role history once. A nonblank `finalAnswer` enables one bounded
+reminder for a text-only stop without a terminal workflow action. Blank slots
+are authoring placeholders; request/assignment/handover data is still supplied.
+
 Config files `agents/orchestrator.json` and `agents/worker.json` are optional
 personality overlays, not replacements for those contracts. With neither file,
 the built-in agents still work. Invalid files fail validation. New run snapshots

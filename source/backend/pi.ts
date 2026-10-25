@@ -1,7 +1,7 @@
 import { mkdir, readFile, open } from "node:fs/promises";
 import { relative, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Type, InMemoryCredentialStore, InMemoryModelsStore } from "@earendil-works/pi-ai";
+import { Type, InMemoryCredentialStore, InMemoryModelsStore, type ImageContent } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Store, now, identity, publish, syncDirectory } from "./storage.ts";
@@ -13,6 +13,7 @@ import { piExportDocument } from "./pi-export.ts";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { ScriptedResponses } from "./scenario.ts";
 import { subagentText } from "../agents/subagent.ts";
+import { orchestratorText } from "../agents/orchestrator.ts";
 import { sharedText } from "../agents/shared.ts";
 
 type Raw = Record<string, unknown>;
@@ -96,6 +97,12 @@ export class PiAdapter {
     this.apiKey = "";
   }
   async create(personality: Personality) {
+    const text = this.workflow.state.configuration.agentText?.[personality.role]
+      ?? (personality.role === "orchestrator" ? orchestratorText : subagentText);
+    const firstReply = text.firstReply;
+    const finalAnswer = text.finalAnswer;
+    const contextHandbackPrompt = this.workflow.state.configuration.agentText?.subagent.contextHandback
+      ?? subagentText.contextHandback;
     const runRoot = this.store.path(this.workflow.prefix);
     const agentDir = this.store.path(this.workflow.prefix, "pi-private", personality.id);
     await mkdir(agentDir, { recursive: true, mode: 0o700 });
@@ -136,6 +143,27 @@ export class PiAdapter {
       customTools: this.sandbox.tools(personality.availableTools) as unknown as ToolDefinition[] });
     await session.bindExtensions({});
     session.agent.toolExecution = "sequential";
+    // AgentSession prepares the system/user messages and retains its lifecycle.
+    // Add the seed to that first message batch so Pi persists it in order and
+    // sends it as assistant history, not as a custom (user-role) message.
+    const agentPrompt = session.agent.prompt.bind(session.agent);
+    let seedPending = !!firstReply.trim();
+    session.agent.prompt = async (input, images?: ImageContent[]) => {
+      if (seedPending && Array.isArray(input) && input.some((message) => message.role === "user")) {
+        seedPending = false;
+        await agentPrompt([...input, {
+          role: "assistant", content: [{ type: "text", text: firstReply }],
+          api: model.api, provider: "refainery", model: "firstReply",
+          stopReason: "stop", timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        }]);
+      } else if (typeof input === "string") {
+        await agentPrompt(input, images);
+      } else {
+        await agentPrompt(input);
+      }
+    };
     // Explicit tool selection overrides extension activation defaults in Pi.
     // Verify registration first: Pi otherwise silently ignores unknown names.
     const registered = session.getAllTools().map((tool) => tool.name);
@@ -203,7 +231,18 @@ export class PiAdapter {
           await session.prompt(prompt);
           if (contextHandback && personality.role === "subagent" && this.workflow.state.phase === "executing" && !this.fatal) {
             session.setActiveToolsByName(["finish_task"]);
-            await session.prompt(subagentText.contextHandback);
+            await session.prompt(contextHandbackPrompt);
+          } else if (!this.fatal && finalAnswer.trim()) {
+            const last = session.messages.at(-1);
+            const yielded = personality.role === "orchestrator"
+              ? !!this.workflow.state.pendingAction
+              : !!this.workflow.state.tasks.at(-1)?.attempts.at(-1)?.handover;
+            if (!yielded && last?.role === "assistant" && last.stopReason === "stop" &&
+                !last.errorMessage && !last.content.some((part) => part.type === "toolCall")) {
+              // One reminder per externally prompted round, within the same
+              // timer/inference budget. Never retry provider errors or tool calls.
+              await session.prompt(finalAnswer);
+            }
           }
           if (this.fatal) throw new Error("Run halted");
           const last = session.messages.filter((message) => message.role === "assistant").at(-1);
