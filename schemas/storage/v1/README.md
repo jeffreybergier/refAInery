@@ -55,7 +55,7 @@ implemented in the supervised backend; their standalone JSON schemas remain
 follow-up work.
 
 The `/v1` dashboard now previews this **full agreed workflow**, using separate
-provisional fixtures documented in `source/fixtures/README.md`. Its restored
+provisional fixtures documented in `refAInery-storage/test/legacy/v1/README.md`. Its restored
 execution timeline uses explicitly recorded fixture observations, not inferred
 checkpoint-save times. The fixture shapes do not finalize the production
 checkpoint/configuration/assignment schemas, and do not add fields to requests.

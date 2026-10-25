@@ -48,7 +48,7 @@ function renderOperations(preview) {
   const cards = [
     ["Workflow phase", activeRun?.checkpoint.phase ?? "No active run", "Saved state, not a worker heartbeat"],
     ["Active runs", operations.activeRuns, "At most one top-level request"],
-    ["Active executions", operations.active, preview.mode === "production" ? "Last saved execution state; not a heartbeat" : "Observed at the frozen snapshot"],
+    ["Active executions", operations.active, preview.savedWorkflow ? "Last saved execution state; not a heartbeat" : "Observed at the frozen snapshot"],
     ["Queued requests", operations.queuedRequests, "FIFO · separate from subwork"],
     ["Pending subagent tasks", operations.pendingTasks, "Inside existing runs"],
     ["Finished attempts", operations.finished, "Includes context handbacks; not acceptance"],
@@ -63,7 +63,7 @@ function renderOperations(preview) {
     column.append(card);
     container.append(column);
   }
-  renderOutcomes(operations.outcomes, preview.mode === "production");
+  renderOutcomes(operations.outcomes, preview.savedWorkflow);
 }
 function renderOutcomes(outcomes, production = false) {
   if (production) {
@@ -200,22 +200,25 @@ async function refresh() {
     const data = await response.json();
     error.hidden = true;
     document.querySelector("#test-notice").hidden = data.mode !== "test";
-    const production = data.mode === "production" && data.schemaVersion === 1;
+    const production = (data.recordSource === "saved" || data.mode === "production") && data.schemaVersion === 1;
+    const label = data.mode === "test" ? "TEST" : "PRODUCTION";
+    if (production && data.mode === "test") document.querySelector("#test-notice").textContent =
+      "TEST FACTORY / Scripted model responses with real Pi sessions and tool execution. No OpenRouter calls.";
     button.hidden = data.mode !== "test" && !production;
     button.textContent = production ? "Refresh saved workflow" : "Refresh fixtures";
     if (data.mode !== "test" && !production) {
-      clearWorkflow("Production workflow is not enabled. Set REFAINERY_BACKEND=1 with explicit storage. No production requests or runs are loaded.");
+      clearWorkflow("No saved workflow is connected. Start refinery.py test serve or prod serve.");
       return;
     }
     if (production) {
       const notes = {
-        "workflow-contract-note": "Supervised production milestone: one request, one worker, explicit plan revisions and saved decisions. No automatic recovery or queue draining.",
+        "workflow-contract-note": `${label} supervised workflow: one request, one worker, explicit plan revisions and saved decisions. No automatic recovery or queue draining.`,
         "token-history-note": "Interval charts are not implemented. Per-call usage and reported costs are available in the run inspector.",
         "telemetry-note": "Saved state is not a worker heartbeat. Context capacity is 250,000 tokens; long-context handback still needs live validation.",
         "queue-contract-note": "Unclaimed intake records define queue membership; dispatch is explicit and blocked by unfinished runs.",
-        "configuration-note": "Actual frozen model/personality definitions for each run. Model capacity was checked against the provider catalog; runtime limits remain provider-controlled.",
-        "storage-contract-note": "Immutable requests, plans, handovers, checkpoint revisions and inference records. Pi owns session files. Native HTML exports include a script-free transcript view.",
-        "dashboard-footer": "refAInery / V1 supervised production workflow",
+        "configuration-note": "Frozen model/personality definitions for each run. Test uses a local catalog and scripted Pi provider; production uses OpenRouter.",
+        "storage-contract-note": "Immutable requests, plans, handovers, checkpoint revisions and inference records. Pi owns session files and generates the native HTML exports.",
+        "dashboard-footer": `refAInery / ${label} saved workflow`,
       };
       for (const [id, text] of Object.entries(notes)) document.getElementById(id).textContent = text;
     }
@@ -224,13 +227,14 @@ async function refresh() {
     renderConfiguration(preview);
     renderRequests(preview.requests, document.querySelector("#request-list"), preview);
     mountFloor(preview, document.querySelector("#floor-runs"), executionCard, { runDetails,
-      note: production ? `PRODUCTION · Saved workflow observed ${utc(data.asOf)}. Supervised single-request execution; no automatic recovery or queue draining. Blue fill = selected.` :
+      note: production ? `${label} · Saved workflow observed ${utc(data.asOf)}. Supervised single-request execution; no automatic recovery or queue draining. Blue fill = selected.` :
         `TEST snapshot: ${utc(data.asOf)}. Provisional observed execution timestamps, not checkpoint-save times or CPU activity. One run at a time; sequential subagents. Review waiting does not extend bars. Finished is not accepted. Blue fill = selected.` });
     document.querySelector("#request-count").textContent = preview.requests.length.toLocaleString("en-US");
-    document.querySelector("#snapshot-time").textContent = `${production ? "PRODUCTION saved workflow" : "Frozen workflow snapshot"} · ${utc(data.asOf)}`;
+    document.querySelector("#snapshot-time").textContent = `${production ? `${label} saved workflow` : "Frozen workflow snapshot"} · ${utc(data.asOf)}`;
     if (production && data.registry) {
       const last = data.registry.lastSuccessAt;
-      const state = !last ? "unavailable" : Date.parse(data.asOf) - Date.parse(last) >= 3600000 ? "STALE" : "recently fetched";
+      const state = data.registry.provider === "faux" ? "local test fixture" :
+        !last ? "unavailable" : Date.parse(data.asOf) - Date.parse(last) >= 3600000 ? "STALE" : "recently fetched";
       document.querySelector("#snapshot-time").textContent += ` · Prices ${state}${data.registry.error ? " · refresh degraded" : ""}`;
     }
     document.querySelector("#workflow-data").hidden = false;

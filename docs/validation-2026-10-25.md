@@ -1,5 +1,10 @@
 # Supervised milestone validation — October 25, 2026
 
+Historical report from before Docker environment consolidation. The saved run
+artifacts are preserved, but the host npm/custom-storage launch recipes are
+retired. Use the root README and `environment-validation.md` for current commands
+and Docker-only check coverage.
+
 ## Verified live result
 
 Final schema-compatible scratch storage: `build/milestone-verified/` (gitignored).

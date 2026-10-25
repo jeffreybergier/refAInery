@@ -1,15 +1,13 @@
 // Optional real-browser regression check; no browser dependency in the app.
-// PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser-floor.mjs
+// Included in refinery.py test check (container Chromium).
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { chromium } from "playwright-core";
 import { createAppServer } from "../source/server.ts";
 
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE
-  ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const root = await realpath(await mkdtemp(join(tmpdir(), "refainery-browser-")));
 const directories = { config: join(root, "config/test"), storage: join(root, "storage/test") };
 let browser;
@@ -127,6 +125,7 @@ try {
   assert.match(await page.locator(".floor-inspector").innerText(), /Execution 0/);
   assert.equal(await page.locator('.floor-bar[aria-pressed="true"]').count(), 1);
   await page.getByRole("button", { name: "Refresh fixtures" }).click();
+  await page.waitForFunction(() => !document.querySelector('#refresh-preview').disabled);
   await page.waitForSelector('.floor-bar[aria-pressed="true"]');
   assert.match(await page.locator(".floor-inspector").innerText(), /Execution 0/);
   await assertSelected(page.locator(".floor-bar").first());
@@ -170,6 +169,7 @@ try {
   await page.waitForTimeout(100);
   const position = await page.locator(".floor-viewport").evaluate((el) => [el.scrollLeft, el.scrollTop]);
   await page.getByRole("button", { name: "Refresh fixtures" }).click();
+  await page.waitForFunction(() => !document.querySelector('#refresh-preview').disabled);
   await page.waitForSelector('.floor-bar[aria-pressed="true"]');
   assert.deepEqual(await page.locator(".floor-viewport").evaluate((el) => [el.scrollLeft, el.scrollTop]), position);
   await page.getByRole("button", { name: "Follow latest" }).click();

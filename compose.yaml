@@ -1,0 +1,25 @@
+services:
+  app:
+    image: refainery-app:local
+    pull_policy: never
+    build: .
+    init: true
+    working_dir: /app
+    environment:
+      REFAINERY_MODE: ${REFAINERY_ENV:-test}
+      REFAINERY_HOST_STORAGE: ${REFAINERY_HOST_STORAGE}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - ./source:/app/source:ro
+      - ./schemas:/app/schemas:ro
+      - ./tests:/app/tests:ro
+      - ./refinery.py:/app/refinery.py:ro
+      - ./serve.py:/app/serve.py:ro
+      - ./run-once.py:/app/run-once.py:ro
+      - ../refAInery-config/${REFAINERY_ENV:-test}:/app/config:ro
+      - ../refAInery-storage/${REFAINERY_ENV:-test}:/app/storage
+      # Only the trusted controller gets Docker access, not the worker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 127.0.0.1:${REFAINERY_PORT:-8080}:8080
+    stop_grace_period: 60s

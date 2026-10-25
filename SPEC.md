@@ -7,7 +7,33 @@ milestone. `docs/supervised-milestone.md` specifies the implemented backend's
 narrower operational limits, file layout, launch commands, and unverified coverage.
 It is not a roadmap for a larger agent platform.
 
-## 1. Implemented web server and dashboard
+## 0. Current environment contract
+
+All application, Pi, tool, automated-test and browser execution runs in Docker.
+`refinery.py test|prod` is the host launcher, not a host Node implementation.
+Each environment reads the corresponding `test/` or `prod/` directory in both
+sibling repositories. There are no ordinary config/storage-root overrides or
+backend-enable switches. Test uses real Pi with its faux provider, scripted
+text/tool calls and a local catalog; no 1Password or OpenRouter calls. Production
+uses OpenRouter; only explicit execution retrieves the API key from 1Password.
+Model selection lives in the selected config directory's `model.json`.
+
+Both environments use the same workflow/storage schemas and saved-record reader.
+The dashboard's `/v2` route redirects to `/v1`. Historical UI fixtures described
+below are retained only for regression checks; V1 fixtures moved into
+`refAInery-storage/test/legacy/v1/`. Executable extensions and their tests moved
+from configuration into the app's `source/extensions/` and `tests/`.
+
+Use `python3 refinery.py test build`, `test run`, `test serve`, `test check`, and
+`test reset`; use `prod run --prompt-file request.md` for paid execution and
+`prod serve` for viewing. Generated check records are disposable and separate
+from interactive test runs. Existing worker isolation and workflow limits remain;
+no additional environment enforcement was introduced. Existing scratch artifacts
+under `build/` are preserved, not another supported environment.
+
+This section and README supersede the historical preview setup below.
+
+## 1. Historical web previews (retained regression coverage)
 
 refAInery is a Node.js/TypeScript application with a dark Bootstrap dashboard.
 Its offline previews display fictional fixtures. The opt-in supervised backend
@@ -34,20 +60,20 @@ not correctness or original-request completion. An accepted context-limit
 handover is still partial progress. The orchestrator's shared export is linked
 only after run end, never generated for individual turns.
 
-The finalized request records remain in `source/fixtures/requests-v1.json`.
-Separate `source/fixtures/workflow-v1.json` records model the agreed queue,
+The request fixtures now live in `refAInery-storage/test/legacy/v1/requests-v1.json`.
+Separate `refAInery-storage/test/legacy/v1/workflow-v1.json` records model the agreed queue,
 configuration, run, checkpoint, task, attempt, and review concepts. The exact
 record shapes, observed execution/turn times, review times, checkpoint times,
 display labels, and export-state encoding are **provisional fixture conventions**,
 not finalized production schemas. Checkpoint-save times are never substituted
 for execution times. Every illustrated snapshot is complete, but the fixture
 shows selected milestones rather than an exhaustive production transition log.
-See `source/fixtures/README.md` for the precise preview contract.
+See `refAInery-storage/test/legacy/v1/README.md` for the precise preview contract.
 
 The latest validated snapshot drives each run; repeated attempts in earlier
 snapshots are not double-counted. The inspector exposes earlier snapshots.
 Run-relative sample Markdown, HTML, and labeled session placeholders live under
-`source/fixtures/workflow-v1/`; none are real Pi files or exports. Referenced
+`refAInery-storage/test/legacy/v1/workflow-v1/`; none are real Pi files or exports. Referenced
 Markdown/HTML can be served in test mode; sessions are not served. HTML remains
 script-free and sandboxed; Markdown is rendered as text.
 
@@ -95,10 +121,9 @@ is not execution time, and last activity is not a worker heartbeat.
   routes. It accepts GET/HEAD only; there is no work-submission or write API.
 - Bootstrap assets are local. Path escapes are rejected, and security headers
   restrict browser content. Artifact labels are not download links.
-- Outside test mode, the default dashboard shows empty production states.
-  `REFAINERY_BACKEND=1` with explicit storage activates the saved production reader
-  and hourly registry service. The separate supervised runner loads config and
-  executes Pi. Live heartbeat/activity telemetry is not implemented.
+- These fixture readers are used only by regression checks. Both runtime
+  environments now use the saved-record reader, with no enable flag.
+  Live heartbeat/activity telemetry is not implemented.
 
 The v2 fixture format is a presentation contract, **not the production storage
 schema**. Its validation lives in `source/preview.ts` and its tests. Its fictional
@@ -109,16 +134,9 @@ workflow validation and document loading live in `source/workflow-preview.ts`.
 
 ### Running and checking
 
-`python3 serve.py --test` launches the preview in the published Altivec container,
-with read-only sibling test directories and fake credentials. It skips 1Password,
-GitHub authorization, storage cloning, and SDK installation. The launcher
-publishes the web port on host loopback only.
-
-The non-test launcher obtains credentials through 1Password at launch. Secrets
-must not be written into schema records, fixtures, configuration, or logs; no
-`.env` files. See `README.md` for launcher prerequisites and dependency caching.
-
-Portable checks: `npm run check` and `npm test`. These do not run live agents.
+Use `python3 refinery.py test check`. All checks, including legacy preview
+regressions and scripted real Pi sessions, run in Docker. See README for the
+shared test/production launcher. No host npm or separate Playwright setup is used.
 
 ## 2. Intake: the first production schema
 
@@ -410,7 +428,7 @@ implemented.
 The config repository contains orchestrator and worker personalities. Both allow
 `web_search`. The worker additionally allows `web_fetch` and Pi's standard `read`,
 `write`, `edit`, and `bash` tools; the orchestrator has no file/shell access.
-The reviewed `prod/extensions/web-search.ts` adapts the operator's existing
+The application-owned `source/extensions/web-search.ts` adapts the operator's existing
 provider-native web extension to take an explicit, frozen session allowlist.
 These web capabilities modify provider payloads rather than register local tools.
 The future server catalog must distinguish native capabilities from local tools,
@@ -420,8 +438,9 @@ unreviewed extension must not be able to silently re-enable denied capabilities.
 The supervised runner activates these definitions and workflow tools, with
 worker file/shell operations delegated to an isolated Docker workspace.
 Provider-native web behavior still needs live verification; the first live
-milestone intentionally makes no web search/fetch calls. See `schemas/config/v1/README.md` and the configuration
-repository's `prod/extensions/README.md` for validation and loading contracts.
+milestone intentionally makes no web search/fetch calls. Test personalities omit
+native web capabilities. See `schemas/config/v1/README.md` and
+`source/extensions/README.md` for validation and loading contracts.
 
 ## 6. Checkpoints — saved run state
 

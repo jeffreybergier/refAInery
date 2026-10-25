@@ -1,20 +1,26 @@
-import { Store, identity, now, safeRead } from "./storage.ts";
+import { Store, identity, now, safeRead, readJSON } from "./storage.ts";
 import { loadConfiguration } from "./config.ts";
 import { Registry } from "./registry.ts";
 import { Workflow, enqueue, queuedRequests, notDue, type Checkpoint } from "./workflow.ts";
 import { PiAdapter, exportSession } from "./pi.ts";
 import { Sandbox } from "./sandbox.ts";
+import { ScriptedResponses, type Scenario } from "./scenario.ts";
 
 export interface RunOptions {
   storage: string; config: string; prompt: string; selectedModel: string;
   registryURL: string; apiKey: string; signal?: AbortSignal;
+  scenario?: Scenario;
   onProgress?: (stage: string) => void;
 }
 
 /** Supervised single-request scheduler. Never resumes or repeats uncertain work. */
 export async function runOnce(options: RunOptions) {
   const store = new Store(options.storage);
-  const registry = new Registry(store, options.registryURL);
+  const scripted = options.scenario ? new ScriptedResponses(options.scenario) : undefined;
+  const registry = scripted
+    ? new Registry(store, options.registryURL,
+      async () => Response.json(await readJSON(options.registryURL)), "faux")
+    : new Registry(store, options.registryURL);
   await store.acquire();
   let sandbox: Sandbox | undefined;
   let engine: Workflow | undefined;
@@ -38,7 +44,7 @@ export async function runOnce(options: RunOptions) {
     if (!selected || selected.context_length < 250000) throw new Error("Selected model capacity unavailable");
     const request = await enqueue(store, options.prompt);
     engine = new Workflow(store, request, { ...config, id: identity("config"),
-      models: [{ id: "default", provider: "openrouter", modelId: options.selectedModel, contextWindow: 250000 }], orchestratorModel: "default" });
+      models: [{ id: "default", provider: scripted ? "faux" : "openrouter", modelId: options.selectedModel, contextWindow: 250000 }], orchestratorModel: "default" });
     await engine.save();
     for (const extension of config.extensions) {
       await store.document(`${engine.prefix}/config/extensions/${extension.name}.ts`, extension.code);
@@ -48,7 +54,8 @@ export async function runOnce(options: RunOptions) {
     stage("starting-isolated-workspace");
     const sandboxImage = await sandbox.start();
     await store.save(`${engine.prefix}/sandbox.json`, { image: sandboxImage, name: sandbox.name, network: "none", hostMount: "workspace-only" });
-    const adapter = new PiAdapter(store, engine, registry, options.selectedModel, options.apiKey, sandbox);
+    const adapter = new PiAdapter(store, engine, registry, options.selectedModel, options.apiKey, sandbox,
+      12, 217232, scripted);
     await adapter.initialize();
     options.apiKey = "";
     orchestrator = await adapter.create(config.personalities.find((p) => p.role === "orchestrator")!);
@@ -99,6 +106,7 @@ export async function runOnce(options: RunOptions) {
     await engine.endTurn();
     const decision = engine.state.pendingAction as Checkpoint["pendingAction"];
     if (decision?.kind !== "finish") throw new Error("Orchestrator did not finish the run");
+    scripted?.assertComplete();
     stage("saving-final-export");
     engine.state.phase = "finalizing";
     engine.state.orchestrator.export = { state: "pending", path: null, error: null };
@@ -111,7 +119,7 @@ export async function runOnce(options: RunOptions) {
     await engine.save();
     stage("complete");
     return { runId: engine.state.runId, requestId: request.id, outcome: engine.state.status, storage: store.root };
-  } catch {
+  } catch (cause) {
     abort();
     await orchestrator?.session.agent.waitForIdle();
     await worker?.session.agent.waitForIdle();
@@ -125,7 +133,7 @@ export async function runOnce(options: RunOptions) {
       }
       try { await engine.save(); } catch { /* last committed checkpoint remains authoritative */ }
     }
-    throw new Error("Milestone incomplete; inspect saved state. No automatic retry.");
+    throw new Error("Milestone incomplete; inspect saved state. No automatic retry.", { cause });
   } finally {
     options.signal?.removeEventListener("abort", abort);
     orchestrator?.session.dispose(); worker?.session.dispose();

@@ -10,6 +10,8 @@ import type { Personality } from "./config.ts";
 import type { Workflow } from "./workflow.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { piExportDocument } from "./pi-export.ts";
+import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
+import type { ScriptedResponses } from "./scenario.ts";
 
 type Raw = Record<string, unknown>;
 export interface Inference {
@@ -50,10 +52,13 @@ export class PiAdapter {
   private apiKey: string;
   readonly sandbox: Sandbox;
   readonly maxCalls: number;
+  readonly scripted?: ScriptedResponses;
   readonly handbackAtTokens: number;
   constructor(store: Store, workflow: Workflow, registry: Registry,
     selected: string, apiKey: string, sandbox: Sandbox,
-    maxCalls = 12, handbackAtTokens = 217232) {
+    maxCalls = 12, handbackAtTokens = 217232,
+    scripted?: ScriptedResponses) {
+    this.scripted = scripted;
     this.store = store; this.workflow = workflow; this.registry = registry;
     this.selected = selected; this.apiKey = apiKey; this.sandbox = sandbox;
     this.maxCalls = maxCalls; this.handbackAtTokens = handbackAtTokens;
@@ -66,6 +71,14 @@ export class PiAdapter {
     }
     this.runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(),
       modelsStore: new InMemoryModelsStore(), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
+    if (this.scripted) {
+      const faux = fauxProvider({ provider: "faux", api: "refainery-scripted",
+        models: [{ id: this.selected, contextWindow: 250000, maxTokens: 2048 }],
+        tokenSize: { min: 4, max: 4 } });
+      this.scripted.bind(faux);
+      this.runtime.registerNativeProvider(faux.provider);
+      return;
+    }
     const price = (key: string) => {
       const n = Number(entry.pricing[key]);
       return Number.isFinite(n) && n >= 0 ? n * 1000000 : 0;
@@ -89,7 +102,7 @@ export class PiAdapter {
     const path = relative(runRoot, manager.getSessionFile()!);
     const web = await import(pathToFileURL(this.store.path(this.workflow.prefix, "config/extensions/web-search.ts")).href);
     const workflow = await import(pathToFileURL(this.store.path(this.workflow.prefix, "config/extensions/workflow.ts")).href);
-    const model = this.runtime.getModel("openrouter", this.selected);
+    const model = this.runtime.getModel(this.scripted ? "faux" : "openrouter", this.selected);
     if (!model) throw new Error("Configured model unavailable");
     const settingsManager = SettingsManager.inMemory({
       compaction: { enabled: false }, cacheWarming: "off", defaultTools: [],
@@ -178,12 +191,13 @@ export class PiAdapter {
       record.revision = 2; record.endedAt = now(); record.status = event.message.stopReason;
       record.normalizedUsage = { input: event.message.usage.input, output: event.message.usage.output,
         cacheRead: event.message.usage.cacheRead, cacheWrite: event.message.usage.cacheWrite,
-        source: "pi-normalized", completeness: "not-independently-verified" };
+        source: this.scripted ? "faux-estimate" : "pi-normalized", completeness: "not-independently-verified" };
       try { await this.store.save(`${this.workflow.prefix}/inferences/${record.id}/000002.json`, record); }
       catch { this.fatal = true; session.agent.abort(); throw new Error("Cannot persist inference result"); }
     });
     return { session, sessionId, path, personality,
       prompt: async (prompt: string) => {
+        if (this.scripted) this.scripted.agent = personality.id;
         const timer = setTimeout(() => { this.fatal = true; session.agent.abort(); }, 180000);
         try {
           await session.prompt(prompt);
@@ -194,7 +208,7 @@ export class PiAdapter {
           if (this.fatal) throw new Error("Run halted");
           const last = session.messages.filter((message) => message.role === "assistant").at(-1);
           if (last?.role === "assistant" && ["error", "aborted", "length"].includes(last.stopReason)) {
-            throw new Error("Pi turn did not finish successfully");
+            throw new Error("Pi turn did not finish successfully", { cause: last.errorMessage });
           }
         } finally { clearTimeout(timer); }
       },

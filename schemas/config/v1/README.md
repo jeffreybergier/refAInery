@@ -1,10 +1,9 @@
 # Configuration v1: agent personalities
 
 `agent.schema.json` defines one self-contained JSON file per personality under
-`refAInery-config/prod/agents/<id>.json`. The application owns this schema; the
-configuration repository owns the definitions. This is not the existing test
-fixture schema. The explicit supervised backend loads and validates these files;
-the offline preview does not.
+`refAInery-config/<test|prod>/agents/<id>.json`. The application owns this schema;
+the configuration repository owns the definitions. Both environments use this
+same schema and backend. Historical presentation fixtures are separate.
 
 All six fields are required; unknown fields are rejected:
 
@@ -49,11 +48,12 @@ top-level configuration schema and recovery mechanism remain future work.
 ## Initial definitions
 
 The sibling configuration repository contains `orchestrator.json` and
-`worker.json`. Both allow `web_search`. The worker additionally allows `web_fetch`
+`worker.json`. Production definitions both allow `web_search`. The worker additionally allows `web_fetch`
 and Pi's standard `read`, `write`, `edit`, and `bash` tools. The orchestrator also
 has `update_plan`, `assign_subagent`, and `finish_run`; the worker has
-`submit_handover`. The config repo's workflow extension delegates persistence to
-the app. The reviewed `prod/extensions/web-search.ts`
+`submit_handover`. Test definitions omit web capabilities. The application-owned
+`source/extensions/workflow.ts` delegates persistence to the backend.
+The reviewed `source/extensions/web-search.ts`
 provides session-scoped provider-native search/fetch declarations, not local Pi
 tool registrations. The future server catalog must distinguish native provider
 capabilities from local tools and validate transport support before use.
@@ -62,7 +62,7 @@ Neither definition is execution-ready merely because it passes structural
 validation. The backend must resolve every tool/capability, explicitly select
 local Pi tools, and load only reviewed extensions with the frozen allowlist.
 Ambient extensions must not be allowed to re-enable denied capabilities. See the
-config repository's `prod/extensions/README.md` for the web extension contract.
+application's `source/extensions/README.md` for the web extension contract.
 
 The supervised runner now loads these configurations, freezes run snapshots,
 selects exact tools, and routes worker filesystem/shell operations into an
@@ -71,18 +71,8 @@ structural validation is not a substitute for runtime enforcement.
 
 ## Contract checks
 
-The optional contract suite uses a real Draft 2020-12 validator, independently of
-Node runtime dependencies. It checks valid/invalid shapes and optionally validates
-actual config files, including filename/ID matching and cross-file uniqueness:
-
-```sh
-python3 -m venv /tmp/refainery-schema-check
-/tmp/refainery-schema-check/bin/python -m pip install jsonschema==4.26.0
-/tmp/refainery-schema-check/bin/python tests/check-agent-schema.py \
-  ../refAInery-config/prod/agents/*.json
-```
-
-Run from the application checkout. This suite is separate from `npm test` and
-requires no model calls or credentials. Tool catalog membership cannot be checked
-until that catalog exists. Identifier patterns use a strict end-of-input
+`python3 refinery.py test check` runs the Draft 2020-12 contract suite in Docker,
+including filename/ID matching and cross-file uniqueness for the test config.
+No host Python package installation, Node setup or model credentials are needed.
+The shared backend separately validates role-specific tool catalog membership. Identifier patterns use a strict end-of-input
 assertion to reject final newlines, which a bare `$` can accept.

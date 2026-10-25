@@ -9,7 +9,7 @@ export interface RegistryModel {
   [key: string]: unknown;
 }
 export interface Catalog {
-  schemaVersion: 1; id: string; provider: "openrouter"; source: string;
+  schemaVersion: 1; id: string; provider: "openrouter" | "faux"; source: string;
   fetchedAt: string; currency: "USD"; tokenPriceUnit: "per-token";
   models: RegistryModel[];
 }
@@ -43,10 +43,13 @@ export class Registry {
   readonly store: Store;
   readonly source: string;
   readonly fetcher: typeof fetch;
-  constructor(store: Store, source: string, fetcher: typeof fetch = fetch) {
+  readonly provider: "openrouter" | "faux";
+  constructor(store: Store, source: string, fetcher: typeof fetch = fetch,
+    provider: "openrouter" | "faux" = "openrouter") {
+    this.provider = provider;
     this.store = store; this.source = source; this.fetcher = fetcher;
     // V1 has exactly one reviewed public source, not an arbitrary credential URL.
-    if (source !== "https://openrouter.ai/api/v1/models") throw new Error("Unsupported registry source");
+    if (provider === "openrouter" && source !== "https://openrouter.ai/api/v1/models") throw new Error("Unsupported registry source");
   }
   async start() {
     const files = (await names(this.store.path("registry/snapshots"))).filter((p) => p.endsWith(".json"));
@@ -56,7 +59,7 @@ export class Registry {
       if (!Number.isFinite(Date.parse(this.current.fetchedAt))) throw new Error("Invalid registry date");
     }
     await this.refresh();
-    this.schedule();
+    if (this.provider !== "faux") this.schedule();
   }
   private schedule() {
     const delay = this.failures ? Math.min(60000 * 2 ** Math.min(this.failures - 1, 5), 3600000) : 3600000;
@@ -96,7 +99,7 @@ export class Registry {
       const body = JSON.parse(text);
       if (body.next || body.next_page || body.has_more || body.links?.next ||
           (body.total_count !== undefined && body.total_count !== body.data?.length)) throw new Error("Incomplete catalog");
-      const snapshot: Catalog = { schemaVersion: 1, id: identity("catalog"), provider: "openrouter",
+      const snapshot: Catalog = { schemaVersion: 1, id: identity("catalog"), provider: this.provider,
         source: this.source, fetchedAt: now(), currency: "USD", tokenPriceUnit: "per-token",
         models: validateCatalog(body) };
       await this.store.save(`registry/snapshots/${snapshot.fetchedAt.replace(/[:.]/g, "-")}-${snapshot.id}.json`, snapshot);
@@ -109,7 +112,8 @@ export class Registry {
     const at = this.current?.fetchedAt ?? null;
     await this.store.replaceIndex("registry/status.json", {
       schemaVersion: 1, attemptedAt, lastSuccessAt: at, snapshotId: this.current?.id ?? null,
-      nextAttemptAt: new Date(Date.now() + (this.failures ? Math.min(60000 * 2 ** Math.min(this.failures - 1, 5), 3600000) : 3600000)).toISOString(),
+      nextAttemptAt: this.provider === "faux" ? null : new Date(Date.now() + (this.failures ? Math.min(60000 * 2 ** Math.min(this.failures - 1, 5), 3600000) : 3600000)).toISOString(),
+      provider: this.provider,
       error: failure,
     });
   }

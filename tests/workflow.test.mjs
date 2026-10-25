@@ -11,7 +11,7 @@ import { workflowPresentation } from "../source/public/workflow.js";
 import { timelineLayout } from "../source/public/floor.js";
 import { createAppServer } from "../source/server.ts";
 
-const raw = JSON.parse(await readFile(new URL("../source/fixtures/workflow-v1.json", import.meta.url), "utf8"));
+const raw = JSON.parse(await readFile(new URL("../storage/legacy/v1/workflow-v1.json", import.meta.url), "utf8"));
 const { requests } = await loadIntakePreview();
 const latest = (data, index = 1) => data.runs[index].checkpoints.at(-1);
 const attempt = (data) => latest(data).tasks[0].attempts[1];
@@ -159,7 +159,7 @@ test("empty workflow and queue-only data do not invent runs", async () => {
 test("missing referenced files and symlinks fail the entire preview without rollback", async (t) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "refainery-v1-")));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  await cp(new URL("../source/fixtures/", import.meta.url), directory, { recursive: true });
+  await cp(new URL("../storage/legacy/v1/", import.meta.url), directory, { recursive: true });
   const root = pathToFileURL(directory + "/");
   await loadWorkflowPreview(root);
   const filename = join(directory, "workflow-v1/run-search/exports/search-final.html");

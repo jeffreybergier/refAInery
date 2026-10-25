@@ -5,11 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { pathToFileURL } from 'node:url';
+import { chromium } from 'playwright-core';
 import { nativeExport } from './helpers/pi-export.mjs';
 import { piExportDocument } from '../source/backend/pi-export.ts';
 
-const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const root=await mkdtemp(join(tmpdir(),'refainery-export-browser-'));
 let browser,server;
 try {

@@ -24,7 +24,8 @@ const assets = new Map([
   ]],
 ]);
 
-export function createAppServer(preview?: PreviewDirectories, production?: Store) {
+export function createAppServer(preview?: PreviewDirectories, production?: Store,
+  environment: "test" | "prod" = "prod") {
   if (preview && production) throw new Error("Cannot mix preview and production");
   return createServer(async (request, response) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
@@ -43,6 +44,9 @@ export function createAppServer(preview?: PreviewDirectories, production?: Store
 
     // No user-supplied path is ever passed to the filesystem.
     const pathname = (request.url ?? "/").split("?")[0];
+    if (production && (pathname === "/v2" || pathname === "/v2/")) {
+      response.writeHead(302, { Location: "/v1" }); response.end(); return;
+    }
     if (["/", "/v1/", "/v2/"].includes(pathname)) {
       response.writeHead(302, { Location: pathname === "/v2/" ? "/v2" : "/v1" });
       response.end();
@@ -50,7 +54,7 @@ export function createAppServer(preview?: PreviewDirectories, production?: Store
     }
     if (pathname === "/api/preview" || pathname === "/api/v1/preview") {
       try {
-        const data = production && pathname === "/api/v1/preview" ? await loadProduction(production) :
+        const data = production ? { ...await loadProduction(production), mode: environment === "test" ? "test" : "production", recordSource: "saved", environment } :
           !preview ? { mode: "production" } :
           pathname === "/api/v1/preview" ? await loadWorkflowPreview() : await loadPreview(preview);
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });

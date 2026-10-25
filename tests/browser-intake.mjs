@@ -1,11 +1,9 @@
 // Optional Chromium coverage, using the same external Playwright as browser-floor.
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { pathToFileURL } from "node:url";
+import { chromium } from "playwright-core";
 import { createAppServer } from "../source/server.ts";
 
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE
-  ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const server = createAppServer({ config: "/unused/test", storage: "/unused/test" });
 let browser;
 try {
@@ -105,7 +103,7 @@ try {
   assert.equal(await page.locator("#request-count").textContent(), "—");
   assert.ok(await page.locator("#test-notice").isHidden());
   assert.ok(await page.locator("#refresh-preview").isHidden());
-  assert.match(await page.locator("#requests-state").textContent(), /Production workflow is not enabled/);
+  assert.match(await page.locator("#requests-state").textContent(), /No saved workflow is connected/);
   assert.deepEqual(errors, []);
   console.log("V1 browser checks passed: timeline, keyboard selection, attempts, handovers, checkpoints, exports, frozen models, refresh/zoom, mobile, safe prompts, and empty/error/production states.");
 } finally {

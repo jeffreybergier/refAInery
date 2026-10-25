@@ -30,7 +30,7 @@ export async function loadConfiguration(root: string) {
   }
   const extensions = [];
   for (const name of ["workflow", "web-search"]) {
-    const code = await safeRead(root, `extensions/${name}.ts`);
+    const code = await readFile(new URL(`../extensions/${name}.ts`, import.meta.url), "utf8");
     extensions.push({ name, code, sha256: createHash("sha256").update(code).digest("hex") });
   }
   return { personalities, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };

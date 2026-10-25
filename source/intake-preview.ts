@@ -41,6 +41,6 @@ export function validateRequestFixtures(value: unknown): RequestFixture[] {
 
 export async function loadIntakePreview() {
   const value: unknown = JSON.parse(await readFile(
-    new URL("./fixtures/requests-v1.json", import.meta.url), "utf8"));
+    new URL("../storage/legacy/v1/requests-v1.json", import.meta.url), "utf8"));
   return { mode: "test", requests: validateRequestFixtures(value) };
 }

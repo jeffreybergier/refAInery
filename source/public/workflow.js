@@ -2,6 +2,7 @@
 // Select the last validated complete snapshot; never accumulate duplicate work
 // by counting every checkpoint as another execution.
 export function workflowPresentation(data) {
+  const savedWorkflow = data.recordSource === "saved" || data.mode === "production";
   const agents = [
     { id: "orchestrator", name: "Orchestrator", role: "Plans, assigns, reviews, and owns run completion" },
     { id: "subagent", name: "Subagent", role: "One assignment at a time; hands back and stops" },
@@ -52,16 +53,16 @@ export function workflowPresentation(data) {
       tasks, plan: document(run.id, checkpoint.plan),
       plans: (checkpoint.plans ?? []).map((entry) => ({ ...entry, document: document(run.id, entry.path) })),
       inferences: (data.inferences ?? []).filter((call) => call.runId === run.id),
-      production: data.mode === "production",
+      production: savedWorkflow,
       request: data.requests.find((request) => request.id === run.requestId) };
   });
   const attempts = runs.flatMap((run) => run.tasks).filter((task) => task.kind === "subagent" && task.startedAt);
   const outcomes = {};
-  for (const review of ["accepted", "rejected", "pending", "not-submitted", ...(data.mode === "production" ? ["decided"] : [])]) {
+  for (const review of ["accepted", "rejected", "pending", "not-submitted", ...(savedWorkflow ? ["decided"] : [])]) {
     outcomes[review] = attempts.filter((task) => task.details.review === review).length;
   }
   const executions = runs.flatMap((run) => run.tasks);
-  return { ...data, agents, runs, operations: { asOf: data.asOf,
+  return { ...data, savedWorkflow, agents, runs, operations: { asOf: data.asOf,
     activeRuns: runs.filter((run) => run.checkpoint.status === "running").length,
     active: executions.filter((task) => task.status === "running").length,
     queuedRequests: data.queue.length,

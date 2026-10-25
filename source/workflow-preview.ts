@@ -252,7 +252,7 @@ function references(workflow: Workflow) {
   return result;
 }
 
-const root = new URL("./fixtures/", import.meta.url);
+const root = new URL("../storage/legacy/v1/", import.meta.url);
 async function checkedRead(url: URL) {
   const filename = fileURLToPath(url);
   if (await realpath(filename) !== filename) throw new Error("Fixture symlink rejected.");

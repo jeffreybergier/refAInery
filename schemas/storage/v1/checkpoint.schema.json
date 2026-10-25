@@ -22,7 +22,7 @@
         "models": { "type": "array", "minItems": 1, "maxItems": 1, "items": {
           "type": "object", "additionalProperties": false,
           "required": ["id", "provider", "modelId", "contextWindow"],
-          "properties": { "id": { "const": "default" }, "provider": { "const": "openrouter" }, "modelId": { "$ref": "#/$defs/text" }, "contextWindow": { "const": 250000 } }
+          "properties": { "id": { "const": "default" }, "provider": { "enum": ["openrouter", "faux"] }, "modelId": { "$ref": "#/$defs/text" }, "contextWindow": { "const": 250000 } }
         } },
         "orchestratorModel": { "const": "default" },
         "personalities": { "type": "array", "items": { "type": "object" } },

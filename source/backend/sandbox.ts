@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
+import { relative, join } from "node:path";
 import { createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition, createBashToolDefinition } from "@earendil-works/pi-coding-agent";
 
 /** No shell on the host, credentials in the child environment, or agent-chosen Docker flags. */
@@ -44,7 +45,7 @@ const fs = require('node:fs/promises'), p = require('node:path');
   else if (op === 'mkdir') await fs.mkdir(full, {recursive: true});
   else if (op === 'write') await fs.writeFile(full, content);
   else throw Error('unknown operation');
-})().catch(() => { process.stderr.write('Sandbox file operation failed'); process.exitCode = 1; });
+})().catch((error) => { process.stderr.write('Sandbox file operation failed: ' + error.message); process.exitCode = 1; });
 `;
 
 export class Sandbox {
@@ -64,10 +65,14 @@ export class Sandbox {
     if (inspect.code) throw new Error("Sandbox image unavailable; pull it explicitly first");
     // Use the inspected immutable image ID, never silently pull during agent execution.
     const imageId = inspect.text.trim();
+    // Docker resolves bind sources on the host, not inside this controller.
+    const hostWorkspace = process.env.REFAINERY_HOST_STORAGE
+      ? join(process.env.REFAINERY_HOST_STORAGE, relative("/app/storage", this.workspace))
+      : this.workspace;
     const result = await docker(["run", "-d", "--name", this.name, "--network", "none", "--read-only",
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "64",
       "--memory", "512m", "--cpus", "1", "--user", "65534:65534", "--tmpfs", "/tmp:rw,size=64m",
-      "--mount", `type=bind,source=${this.workspace},target=/workspace`, "-w", "/workspace",
+      "--mount", `type=bind,source=${hostWorkspace},target=/workspace`, "-w", "/workspace",
       "--entrypoint", "node", imageId, "-e", "setInterval(() => {}, 1000)"]);
     if (result.code) throw new Error("Could not start isolated sandbox");
     this.started = true;
@@ -81,8 +86,12 @@ export class Sandbox {
   }
   async file(op: string, path: string, content?: string) {
     if (!this.started) throw new Error("Sandbox is stopped");
-    const result = await docker(["exec", "-i", this.name, "node", "-e", fileScript], JSON.stringify({ op, path, content }));
-    if (result.code) throw new Error("Sandbox file operation failed");
+    // Pi resolves relative tool paths against the session's controller cwd.
+    // Translate that same workspace into the worker's mount namespace.
+    const workerPath = path === this.workspace || path.startsWith(this.workspace + "/")
+      ? join("/workspace", relative(this.workspace, path)) : path;
+    const result = await docker(["exec", "-i", this.name, "node", "-e", fileScript], JSON.stringify({ op, path: workerPath, content }));
+    if (result.code) throw new Error(`Sandbox file operation failed: ${result.text}`);
     return result.text;
   }
   tools(allowed: string[]) {

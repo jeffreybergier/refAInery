@@ -1,111 +1,86 @@
-# Supervised Pi milestone
+# Supervised Pi workflow
 
-This is a real backend integration, not simulated agent output. It intentionally
-runs **one request and one worker**, then stops. It is not an unattended scheduler
-or a general-purpose recovery engine. The existing fixture previews remain
-available and offline.
-
-## Run a request
-
-Requirements: Node 22.19+, installed application dependencies (`npm ci
---ignore-scripts`), Python 3, Docker running, the existing Altivec image already
-available, and approved 1Password CLI access. No Apple SDK setup is needed for
-this scratch-workspace milestone. The image ID is resolved and recorded before
-starting a worker; execution never implicitly pulls an image.
-
-From `refAInery`:
+The same backend runs in both Docker environments. It executes **one request and
+one worker**, then stops; this is not an unattended scheduler or recovery engine.
+See the root README for the launcher and setup.
 
 ```sh
-python3 run-once.py --prompt-file examples/milestone/request.md \
-  --storage build/my-supervised-run
+python3 refinery.py test run --scenario happy-path
+python3 refinery.py test serve
+# Paid execution, explicitly requested:
+python3 refinery.py prod run --prompt-file examples/milestone/request.md
+python3 refinery.py prod serve
 ```
 
-Without `--storage`, the runner uses `build/supervised-storage`. It never copies
-preview fixtures into that root.
+There are no operator-selected storage roots. The launcher mounts the selected
+sibling config and storage directories at `/app/config` and `/app/storage`.
+The server always reads saved workflow records; no backend-enable flag is needed.
+All Node/npm/browser execution occurs in the app container. The host launcher
+only constructs Docker commands and obtains a production API key when running.
 
-The launcher reads only `OPENROUTER_API_KEY`, `MODEL_REGISTRY`, and `MODEL_SELECTED`
-from `Dev Key - refAInery`. It does not pass GitHub credentials, ambient provider
-credentials, Pi settings, or `NODE_OPTIONS`. Secrets are not written into config,
-storage, arguments, or logs. Pi uses an in-memory credential store. The selected
-identifier is sent unchanged; there is no fallback model. Catalog capacity must
-support the fixed 250,000-token run configuration and model tool calls.
+## Configuration and providers
 
-The server tools and personality files are loaded from the sibling
-`refAInery-config/prod` by default (`--config` overrides that explicit trusted
-checkout). Their contents, extension hashes, SDK version, and tool-catalog
-version are frozen before agent execution. Do not point the loader at unreviewed
-code: extensions execute in the host process with its permissions.
+`model.json` supplies model/provider selection and registry source. Test uses
+Pi 1.4.0's built-in faux provider and local `catalog.json`. Scenario JSON supplies
+assistant text and tool calls. Production uses OpenRouter and reads only
+`OPENROUTER_API_KEY` from the existing 1Password item. Neither test action nor
+production viewing needs 1Password. Model selection and registry URL no longer
+come from secret fields.
 
-Limits: one assignment, twelve inference requests across both sessions, 2,048
-maximum output tokens per call, no provider or agent retries, and a three-minute
-cancellation deadline per prompted phase (bounded tool teardown can add time).
-Native web calls may have additional charges.
-The example is deterministic and explicitly asks agents not to use web tools.
+Pi sessions, extension registration, tool dispatch, exports, checkpoint writes
+and UI projection are real in both environments. The scripted provider does not
+exercise OpenRouter HTTP parsing or model reasoning. Faux usage is recorded as
+`faux-estimate`; provider-reported identity/cost remain unknown when absent.
 
-## Inspect the result
+Personalities are loaded from the selected config directory. Executable
+extensions now live in `source/extensions/`, not in separate test/prod config.
+Their reviewed contents, hashes, SDK version and tool catalog version are frozen
+before each execution. The worker test personality omits native web capabilities;
+its script only calls local/workflow tools.
 
-```sh
-REFAINERY_BACKEND=1 \
-REFAINERY_STORAGE_DIR=build/my-supervised-run \
-npm start
-```
+Existing limits remain: one assignment, twelve inference requests across both
+sessions, 2,048 output tokens per call, no provider/agent retries, and a three-minute
+deadline per prompted phase. Long-context handback is not live-validated.
 
-Open the loopback server on port 8080 and select `/v1`. This opt-in server reads
-production records and refreshes the registry at startup and hourly while idle;
-it does **not** submit work or run the queue automatically. Refresh the dashboard
-manually to load new saved state. Default `serve.py` and `serve.py --test` do not
-activate this backend. Never expose the unauthenticated server to an untrusted
-network. The configured storage root must be application-owned and private.
+## Ownership and sequencing
 
-The dashboard shows the actual execution timeline, current/final plans, full plan
-history, handovers, decisions, checkpoints, frozen tool/model selections, and
-per-call requested versus provider-reported actual model identity. A saved state
-is not a worker heartbeat. Completed execution, recorded decisions, and original
-request outcome remain separate; production does not invent accepted/rejected
-review labels. Short historical bars can overlap at the minimum pixel width as
-idle time expands the axis; select the job label and its execution list to inspect
-any execution without relying on a tiny bar hit target.
-
-## Ownership and scheduling
-
-The config repository's `extensions/workflow.ts` defines four model-facing tools:
+The application binds caller role/session identity to these tools:
 
 - Orchestrator: `update_plan`, `assign_subagent`, `finish_run`.
-- Worker: `submit_handover`, plus allowed standard tools and web capabilities.
+- Worker: `submit_handover`, plus its configured file/shell/web capabilities.
 
-The app binds caller role/session identity outside the tool arguments. A plan
-must be saved in the current planning turn before assignment or finalization.
-Plan Markdown is published first, then an immutable checkpoint. The next action
-references that revision. Tool-call receipts contain argument hashes and results,
-not copies of plan/handover Markdown. Repeated delivery of the same call ID is
-idempotent; changed arguments with a reused ID fail.
+The application owns dispatch and persistence. Plans are saved before assignment
+or finalization. A yielding workflow tool must be the only tool call in its
+assistant message. The tool termination result stops Pi's automatic follow-up.
+Receipts make repeat call IDs idempotent; changed arguments with an existing ID
+remain an error.
 
-A terminal workflow tool must be the only call in its assistant message. Pi's
-termination result prevents an automatic follow-up; the backend waits for session
-settlement before switching agents. A normal handback saves Markdown, stops the
-worker, saves its export, stops the entire workspace container (including any
-background shell work), and commits the awaiting-decision checkpoint before
-resuming the orchestrator. The final plan/decision precedes the orchestrator's
-single final session export and terminal checkpoint.
+After a worker handover, the application saves its native Pi export, stops the
+worker container (including background work), and commits the review checkpoint.
+Only then does the orchestrator resume. The final plan/decision precedes the
+orchestrator's final session export and terminal checkpoint.
 
-The worker uses Pi's actual standard tool definitions with custom file/shell
-operations delegated to Docker. This first adapter targets text files; image
-handling has not been validated. The container has no network, credentials,
-Docker socket, config/storage mounts, or host project checkout. Its only host
-mount is this run's scratch workspace. It runs unprivileged, with a read-only
-root, no capabilities, and process/memory/CPU limits. The workspace remains after
-container teardown for operator inspection; it is not publicly served. Provider
-native web tools run through the model API, outside that network-disabled shell.
-This setup limits the milestone; it is not a claim that containers eliminate all
-security risks or that shell access is suitable for arbitrary untrusted jobs.
+## Docker workspace
 
-## Storage layout
+The controller invokes Docker through its socket. Worker tools use Pi's standard
+definitions with custom operations delegated to the existing sandbox. The worker
+has no network, credentials or Docker socket; its only bind mount is that run's
+scratch workspace. Existing read-only root, unprivileged user and resource limits
+are retained, not expanded by the environment cleanup.
+
+Docker bind sources are host paths. The launcher supplies the selected host
+storage directory so the controller can translate `/app/storage/runs/.../workspace`
+to the corresponding host path. Pi-relative tool paths are translated from the
+session cwd into `/workspace` too. No host Node process or shell tool execution
+is used. Production-native web tools still run through the model API, outside
+the worker's shell network policy.
+
+## Storage layout (identical in test and prod)
 
 ```text
 requests/<request-id>.json
-registry/
-  snapshots/<fetch-time>-<snapshot-id>.json
-  status.json
+registry/snapshots/<fetch-time>-<snapshot-id>.json
+registry/status.json
 runs/<run-id>/
   config/frozen.json
   config/extensions/{workflow,web-search}.ts
@@ -121,112 +96,32 @@ runs/<run-id>/
   pi-private/...
 ```
 
-Requests and checkpoints have Draft 2020-12 schemas under `schemas/storage/v1`.
-Runtime validation also checks plan history, frozen configuration, sequential
-execution and export/review relationships. The registry and inference records
-currently use the TypeScript contracts in `source/backend`; standalone schemas
-for those records remain follow-up work.
+Immutable publication, writer locks, checkpoint validation, explicit interruption
+and no automatic recovery are unchanged. Interrupted runs require operator
+inspection. For disposable test runs, stop test work and use `test reset`; that
+command removes generated records but retains checked-in fixtures. It is not a
+production recovery command.
 
-Immutable files are flushed and atomically published without overwriting prior
-records. Newly created parent-directory entries are flushed too. One exclusive
-writer lock protects workflow dispatch. Temporary files are ignored; a missing
-or corrupt committed checkpoint or referenced document fails closed, never
-silently rolling back. Queue membership is derived from immutable intake and run
-references; this milestone refuses to dispatch if any intake is already queued
-or any prior run requires recovery.
+Production registry snapshots refresh at startup and hourly while a runner or
+viewer is active, retaining prior observations and explicit failures. Test loads
+its local catalog without network calls or hourly refresh. Inference intent is
+saved before dispatch, and results before tools execute. Unknown identities and
+costs remain unknown; registry observations do not rewrite historical prices.
 
-Inference intent is saved **before** invoking the provider. Raw provider model/ID
-and allowlisted usage/cost fields are observed before Pi normalization. The
-terminal inference revision is saved before executing tools. Unknown identities
-or costs remain null. A provider-reported name does not prove immutable weights.
-Pi-normalized counts retain their source and are not treated as independently
-verified measurements. No financial estimates or token-history chart are invented.
+Pi owns conversation JSONL and generates native HTML via `exportToHtml()`. The
+existing viewer policy permits pinned native scripts in an opaque-origin sandbox.
+Unknown HTML remains script-free. The old known JSON preamble is removed only in
+HTTP responses, not rewritten on disk. Only referenced exports/plans/handovers
+are web routes.
 
-Registry snapshots preserve the complete public catalog, including decimal price
-strings, pricing overrides, and unknown-price sentinels such as `-1`. A sentinel
-is not a negative price or zero cost. Partial catalogs are rejected. Each call
-references the snapshot current in its adapter at dispatch and its freshness;
-refresh does not reprice history or change frozen model choices. Failed refreshes
-retain the last good catalog and retry with bounded backoff. A per-registry lock
-prevents concurrent publication from the viewer and runner; a crashed lock needs
-operator inspection. Prices are stale after one hour without success. Hourly
-observations are not a promise of instantaneous provider prices or exact charges.
-Provider-reported USD cost is stored separately; no total is computed using binary
-floating-point arithmetic in the application.
+## Validation
 
-Pi owns the conversation files. The backend explicitly calls
-`session.exportToHtml()` and publishes the resulting native HTML byte-for-byte;
-HTML is not an automatically created session artifact. The intermediate copy
-remains under `pi-private/`. There is no injected JSON transcript.
+`python3 refinery.py test check` runs typechecking, unit tests, schema/launcher
+checks, scripted end-to-end runs and Chromium checks in Docker. Disposable check
+storage is separate from interactive runs. It covers real Pi text and tool-call
+streaming, file operations, lifecycle/export boundaries, workflow reads in both
+environments, and scripted provider/tool failures.
 
-Only recognized exports matching the installed, pinned Pi template receive a
-viewer-specific CSP. Script hashes come from that trusted template, never from
-agent-generated HTML. The opaque-origin sandbox permits its four bundled scripts
-and three fixed click handlers (expand content, expand tool parameters, download
-session JSONL), plus downloads for the native JSONL button. It does not grant
-same-origin access, arbitrary scripts/eval, network requests, frames, forms, or
-popups. Data-URL images and inline styles support native rendering. Unknown HTML
-and fixture exports remain script-free. SDK upgrades must pass the native-viewer
-and security browser tests before deployment.
-
-For exports saved before this fix, the server removes only the known injected
-JSON preamble from the HTTP representation, then validates the native template.
-It does not rewrite immutable history, regenerate sessions, or call a model.
-Restart an already-running server to apply the route/policy fix; existing export
-URLs then work unchanged. Only referenced plans, handovers and exports are served;
-sessions, private exports, workspace files, credentials, and arbitrary paths are
-not web routes.
-
-## Failure and recovery boundaries
-
-On interruption or failed handback/export, the run remains `recovery-required`
-and blocks new work. There is no automatic inference retry, redispatch, worker
-continuation, export repair command, or stale-lock removal. Preserve logs and
-checkpoints. Inspect any `refainery-*` containers and stop owned workers before
-manually recovering storage. Never rerun an agent merely to repair an export.
-Use a new scratch storage root for an independent test, not as a way to continue
-an interrupted real job while its worker might still be executing.
-
-Compaction and automatic continuation/retry are disabled. A conservative
-application context guard reserves space and requests a handover-only turn; it
-uses Pi's reported context and a size estimate. Long-context handback and provider
-overflow remain **not live-validated**. This is not advertised as a verified Pi
-compaction-boundary implementation. Other pending coverage includes forced-crash
-recovery, live web search/fetch, repeated subagents, automatic FIFO draining,
-production project access, and browser submission controls.
-
-## Checks
-
-```sh
-npm run check
-npm test
-# From the config repository:
-node --test tests/*.test.mjs
-node tests/typecheck.mjs
-```
-
-The application tests include actual SDK construction without model calls,
-workflow/storage invariants, hourly registry scheduling, credential isolation,
-model provenance, and safe document routing. They use local temporary data.
-`skipLibCheck` is enabled because the pinned SDK dependency declarations contain
-JSON imports without NodeNext import attributes and an optional Google MCP type
-reference. Application and extension code remain strictly typechecked; dependency
-declaration checking is not claimed.
-
-Optional browser checks use an externally installed Playwright:
-
-```sh
-PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
-REFAINERY_STORAGE_DIR=build/my-supervised-run \
-node tests/browser-production.mjs
-
-# Self-contained native export/rendering and browser security regression:
-PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
-node tests/browser-pi-export.mjs
-```
-
-That check reads a completed deterministic milestone using the configured example
-model; it makes no model calls. It verifies both native viewers, rendered
-messages, viewer controls, and JSONL downloads—not a substitute transcript. The
-existing `browser-intake.mjs` and `browser-floor.mjs` continue to cover the offline
-previews.
+Live model quality, OpenRouter transport, paid web tools, crash recovery,
+long-context limits and access to actual project checkouts are not established
+by scripted tests. No live calls are part of normal checks.
