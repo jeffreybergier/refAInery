@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "refAInery supervised workflow checkpoint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "requestId", "number", "savedAt", "status", "phase", "startedAt", "endedAt", "configuration", "plan", "plans", "orchestrator", "tasks", "decisions", "receipts", "pendingAction", "failure", "resultSummary"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "$ref": "#/$defs/id" },
+    "requestId": { "$ref": "#/$defs/id" },
+    "number": { "type": "integer", "minimum": 1 },
+    "savedAt": { "$ref": "#/$defs/time" },
+    "startedAt": { "$ref": "#/$defs/time" },
+    "endedAt": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+    "status": { "enum": ["running", "completed", "failed", "interrupted"] },
+    "phase": { "enum": ["created", "planning", "dispatching", "executing", "stopping-worker", "exporting", "awaiting-review", "finalizing", "ended", "recovery-required"] },
+    "configuration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "models", "orchestratorModel", "personalities", "extensions", "sdkVersion", "toolCatalogVersion"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "models": { "type": "array", "minItems": 1, "maxItems": 1, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "provider", "modelId", "contextWindow"],
+          "properties": { "id": { "const": "default" }, "provider": { "const": "openrouter" }, "modelId": { "$ref": "#/$defs/text" }, "contextWindow": { "const": 250000 } }
+        } },
+        "orchestratorModel": { "const": "default" },
+        "personalities": { "type": "array", "items": { "type": "object" } },
+        "extensions": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "code", "sha256"],
+          "properties": { "name": { "enum": ["workflow", "web-search"] }, "code": { "$ref": "#/$defs/text" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+        } },
+        "sdkVersion": { "const": "1.4.0" }, "toolCatalogVersion": { "const": "refainery-tools-v1" }
+      }
+    },
+    "plan": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
+    "plans": { "type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["path", "turnId", "at"],
+      "properties": { "path": { "$ref": "#/$defs/markdown" }, "turnId": { "$ref": "#/$defs/id" }, "at": { "$ref": "#/$defs/time" } }
+    } },
+    "orchestrator": {
+      "type": "object", "additionalProperties": false, "required": ["sessionId", "sessionPath", "export", "turns"],
+      "properties": {
+        "sessionId": { "type": "string" }, "sessionPath": { "type": "string", "pattern": "^(?:sessions/[a-zA-Z0-9_.-]+\\.jsonl)?$" },
+        "export": { "$ref": "#/$defs/export" },
+        "turns": { "type": "array", "items": { "$ref": "#/$defs/execution" } }
+      }
+    },
+    "tasks": { "type": "array", "maxItems": 1, "items": {
+      "type": "object", "additionalProperties": false, "required": ["id", "title", "model", "assignment", "attempts"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "title": { "$ref": "#/$defs/text" }, "model": { "const": "default" }, "assignment": { "$ref": "#/$defs/text" },
+        "attempts": { "type": "array", "maxItems": 1, "items": { "$ref": "#/$defs/attempt" } }
+      }
+    } },
+    "decisions": { "type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["attemptId", "at", "action", "summary", "plan"],
+      "properties": {
+        "attemptId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "at": { "$ref": "#/$defs/time" }, "action": { "enum": ["assign_subagent", "finish_run"] },
+        "summary": { "$ref": "#/$defs/text" }, "plan": { "$ref": "#/$defs/markdown" }
+      }
+    } },
+    "receipts": { "type": "object", "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["action", "argsHash", "result"],
+      "properties": { "action": { "enum": ["update_plan", "assign_subagent", "submit_handover", "finish_run"] }, "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "result": {} }
+    } },
+    "pendingAction": { "anyOf": [{ "type": "null" }, {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": { "kind": { "enum": ["assign", "finish"] }, "outcome": { "enum": ["completed", "failed"] }, "summary": { "$ref": "#/$defs/text" } }
+    }] },
+    "failure": { "type": ["string", "null"] },
+    "resultSummary": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])", "maxLength": 128 },
+    "text": { "type": "string", "pattern": "\\S" },
+    "time": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "markdown": { "type": "string", "pattern": "^(plans|handovers)/[a-zA-Z0-9_-]+\\.md$" },
+    "export": {
+      "type": "object", "additionalProperties": false, "required": ["state", "path", "error"],
+      "properties": {
+        "state": { "enum": ["not-due", "pending", "saved", "failed"] },
+        "path": { "anyOf": [{ "type": "null" }, { "type": "string", "pattern": "^exports/[a-zA-Z0-9_-]+\\.html$" }] },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+    "execution": {
+      "type": "object", "required": ["id", "title", "status", "startedAt", "endedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "title": { "$ref": "#/$defs/text" },
+        "status": { "enum": ["running", "completed", "failed", "interrupted"] },
+        "startedAt": { "$ref": "#/$defs/time" }, "endedAt": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] }
+      }
+    },
+    "attempt": {
+      "allOf": [{ "$ref": "#/$defs/execution" }],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["number", "model", "personality", "sessionId", "sessionPath", "handover", "export", "stopReason", "review", "reviewedAt", "retryReason", "planRevision"],
+      "properties": {
+        "number": { "const": 1 }, "model": { "const": "default" }, "personality": { "const": "worker" },
+        "sessionId": { "$ref": "#/$defs/id" }, "sessionPath": { "type": "string", "pattern": "^sessions/[a-zA-Z0-9_.-]+\\.jsonl$" },
+        "handover": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
+        "export": { "$ref": "#/$defs/export" }, "stopReason": { "enum": [null, "completed", "context-limit"] },
+        "review": { "enum": ["not-submitted", "pending", "decided"] },
+        "reviewedAt": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+        "retryReason": { "type": "null" }, "planRevision": { "$ref": "#/$defs/markdown" }
+      }
+    }
+  }
+}

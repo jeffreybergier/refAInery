@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A personal AI workshop with an industrial control-room UI.",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "start": "node source/main.ts",
@@ -13,6 +13,10 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
     "bootstrap": "5.3.8"
   },
   "devDependencies": {

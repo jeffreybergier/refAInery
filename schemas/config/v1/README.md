@@ -3,7 +3,8 @@
 `agent.schema.json` defines one self-contained JSON file per personality under
 `refAInery-config/prod/agents/<id>.json`. The application owns this schema; the
 configuration repository owns the definitions. This is not the existing test
-fixture schema and does not activate production configuration loading.
+fixture schema. The explicit supervised backend loads and validates these files;
+the offline preview does not.
 
 All six fields are required; unknown fields are rejected:
 
@@ -21,7 +22,7 @@ selection, requested/actual model identity, credentials, and execution state do
 not belong here. JSON strings can use `\n` for multiline instructions; there is
 no separate instruction-file reference.
 
-## Backend validation and enforcement (not implemented)
+## Backend validation and enforcement
 
 Structural validation uses JSON Schema Draft 2020-12. The configuration loader
 must additionally reject duplicate personality IDs, basename/ID mismatches,
@@ -41,14 +42,18 @@ allowlists, and tool catalog/implementation version with the run configuration.
 Each attempt references its personality ID in that snapshot. Reject recovery
 when the required tool implementation is unavailable rather than silently
 substituting changed behavior. Active runs do not reread edited personalities.
-The enclosing configuration/snapshot schemas and tool catalog remain undefined.
+The supervised checkpoint now includes these frozen definitions and the fixed
+role-specific catalog implemented in `source/backend/config.ts`. A generalized
+top-level configuration schema and recovery mechanism remain future work.
 
 ## Initial definitions
 
 The sibling configuration repository contains `orchestrator.json` and
 `worker.json`. Both allow `web_search`. The worker additionally allows `web_fetch`
-and Pi's standard `read`, `write`, `edit`, and `bash` tools. Workflow tool
-implementations remain pending. The reviewed `prod/extensions/web-search.ts`
+and Pi's standard `read`, `write`, `edit`, and `bash` tools. The orchestrator also
+has `update_plan`, `assign_subagent`, and `finish_run`; the worker has
+`submit_handover`. The config repo's workflow extension delegates persistence to
+the app. The reviewed `prod/extensions/web-search.ts`
 provides session-scoped provider-native search/fetch declarations, not local Pi
 tool registrations. The future server catalog must distinguish native provider
 capabilities from local tools and validate transport support before use.
@@ -59,8 +64,10 @@ local Pi tools, and load only reviewed extensions with the frozen allowlist.
 Ambient extensions must not be allowed to re-enable denied capabilities. See the
 config repository's `prod/extensions/README.md` for the web extension contract.
 
-The runtime loader, policy enforcement, tool catalog, run snapshots, and Pi
-integration are not implemented by this schema slice.
+The supervised runner now loads these configurations, freezes run snapshots,
+selects exact tools, and routes worker filesystem/shell operations into an
+isolated Docker workspace. See `docs/supervised-milestone.md` for boundaries;
+structural validation is not a substitute for runtime enforcement.
 
 ## Contract checks
 

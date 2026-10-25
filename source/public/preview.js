@@ -157,7 +157,7 @@ export function executionLabel(task) {
 export function reviewLabel(task) {
   const review = task.details?.review;
   if ((!review || review === "unknown") && task.status === "awaiting-review") return "Pending";
-  return { pending: "Pending", accepted: "Accepted", rejected: "Rejected",
+  return { pending: "Pending", accepted: "Accepted", rejected: "Rejected", decided: "Decision recorded",
     "not-submitted": "Not submitted", "not-applicable": "Not applicable" }[review] ?? "Not recorded";
 }
 

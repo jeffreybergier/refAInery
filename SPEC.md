@@ -2,14 +2,17 @@
 
 **Updated:** 2026-10-25
 
-This document covers the implemented web preview and the storage/workflow model
-agreed so far. It is not a roadmap for a larger agent platform.
+This document covers the previews, agreed workflow, and first supervised Pi
+milestone. `docs/supervised-milestone.md` specifies the implemented backend's
+narrower operational limits, file layout, launch commands, and unverified coverage.
+It is not a roadmap for a larger agent platform.
 
 ## 1. Implemented web server and dashboard
 
 refAInery is a Node.js/TypeScript application with a dark Bootstrap dashboard.
-It currently displays fictional, read-only fixtures, not real agent activity.
-Pi integration and production orchestration are not implemented.
+Its offline previews display fictional fixtures. The opt-in supervised backend
+now executes a real request with one worker, persists the workflow, and feeds v1.
+It does not yet automatically drain the queue or resume interrupted work.
 
 `/` redirects to `/v1`. `/v1` presents the full agreed workflow below; `/v2`
 preserves the original execution-oriented test dashboard. Both remain read-only.
@@ -92,8 +95,10 @@ is not execution time, and last activity is not a worker heartbeat.
   routes. It accepts GET/HEAD only; there is no work-submission or write API.
 - Bootstrap assets are local. Path escapes are rejected, and security headers
   restrict browser content. Artifact labels are not download links.
-- Outside test mode, the dashboard shows empty production states. Production
-  configuration/storage loading, live activity, and Pi exports are not implemented.
+- Outside test mode, the default dashboard shows empty production states.
+  `REFAINERY_BACKEND=1` with explicit storage activates the saved production reader
+  and hourly registry service. The separate supervised runner loads config and
+  executes Pi. Live heartbeat/activity telemetry is not implemented.
 
 The v2 fixture format is a presentation contract, **not the production storage
 schema**. Its validation lives in `source/preview.ts` and its tests. Its fictional
@@ -141,13 +146,16 @@ validation requirements, including enabled date-time format assertions.
 
 A request remains unchanged after acceptance. Queue position, run status,
 provider/model selection, and results belong elsewhere. This record's schema,
-example, and read-only dashboard fixtures exist; a production validator/writer
-is not implemented.
+example, fixtures, and supervised production validator/writer exist. Intake is
+currently an explicit CLI operation, not a browser write API.
 
-## 3. Queue and orchestration — agreed design, not implemented
+## 3. Queue and orchestration — agreed design
 
-Top-level requests enter a **FIFO queue**. When the factory is free, it
-automatically starts the oldest request as a **run**.
+The full design places top-level requests in a **FIFO queue** and starts the
+oldest request when free. The current milestone is deliberately supervised:
+`run-once.py` accepts one request, requires no previously queued/unfinished work,
+runs one worker, and stops. Automatic dispatch and multiple subagents per run
+are follow-up work, not enabled behavior.
 
 - One top-level run is active at a time.
 - All subwork stays inside that run, ahead of the next queued request.
@@ -170,11 +178,22 @@ Only the orchestrator creates subagents. Subagents cannot delegate or pass work
 directly to another subagent. The orchestrator owns the plan and decides whether
 the original request is finished.
 
+The implemented tools are `update_plan`, `assign_subagent`, `finish_run`, and
+worker-only `submit_handover`. Their thin Pi definitions live in the config repo;
+the backend binds caller identity and owns durable transitions. The orchestrator
+must save a full Markdown plan in each planning/review turn before assignment or
+finalization. Each revision is immutable and each subsequent action references
+it. Reviewing uses a prompt plus the next saved action, not a `review_handover`
+tool or a required accepted/rejected ceremony. Production records use pending
+versus decision-recorded states; preview accepted/rejected examples stay fictional.
+Terminal workflow tools must be called alone and yield control.
+
 A subagent writes a handover and stops when its assignment finishes or it reaches
 the context handover boundary, intended to be Pi's request to compact context.
-We must verify that boundary and the ability to produce a handover before
-implementing it; automatic continuation through compaction is not the intended
-behavior. A crash without a handover is an interruption, not a completed result.
+The exact Pi compaction boundary still needs live validation. The milestone
+disables compaction/retries and uses a conservative application context guard to
+request handback with reserve space; this is not a verified replacement for that
+boundary. Automatic continuation through compaction is not intended behavior. A crash without a handover is an interruption, not a completed result.
 
 On each normal handback, including a context-limit handback:
 
@@ -357,9 +376,11 @@ startup/hourly/idle refreshes, unchanged catalogs, invalid or partial responses,
 timeouts, write failure, stale/no-catalog states, restart, non-overlapping refresh,
 and historical snapshot references remaining unchanged after new prices arrive.
 
-These are agreed backend requirements, not implemented schemas or runtime
-behavior. The production registry refresher, durable registry/inference writers,
-and dashboard presentation remain to be implemented with the Pi/backend slice.
+The supervised backend implements registry fetching, immutable snapshots,
+per-inference intent/results, provider model identity and cost observations, and
+saved-state dashboard inspection. Registry/inference standalone JSON schemas,
+financial estimates, and interval charts remain follow-up work. See the milestone
+document for implementation limits and explicit unverified coverage.
 
 ### 5.4 Agent personalities and tool allowlists
 
@@ -381,8 +402,10 @@ isolation; an allowlist alone is not a sandbox.
 Freeze complete personalities, resolved tool permissions, and the tool catalog/
 implementation version in each run's configuration. Attempts reference a frozen
 personality ID. Configuration edits affect future runs only; recovery must not
-silently substitute changed tool implementations. The enclosing snapshot schema,
-loader, catalog, and enforcement are not implemented yet.
+silently substitute changed tool implementations. The supervised checkpoint schema includes the frozen configuration. The loader
+validates the initial two personalities against the role-specific catalog and
+explicitly loads their tools; arbitrary catalog plugins and recovery are not
+implemented.
 
 The config repository contains orchestrator and worker personalities. Both allow
 `web_search`. The worker additionally allows `web_fetch` and Pi's standard `read`,
@@ -394,9 +417,10 @@ The future server catalog must distinguish native capabilities from local tools,
 validate provider support, and disable ambient extension discovery. A later or
 unreviewed extension must not be able to silently re-enable denied capabilities.
 
-These definitions are not activated by the current server. Workflow tools and
-production loading/enforcement remain pending; provider-native web behavior still
-needs live verification. See `schemas/config/v1/README.md` and the configuration
+The supervised runner activates these definitions and workflow tools, with
+worker file/shell operations delegated to an isolated Docker workspace.
+Provider-native web behavior still needs live verification; the first live
+milestone intentionally makes no web search/fetch calls. See `schemas/config/v1/README.md` and the configuration
 repository's `prod/extensions/README.md` for validation and loading contracts.
 
 ## 6. Checkpoints — saved run state
@@ -447,7 +471,10 @@ JSON holds identities and workflow state. Markdown holds plans and handovers.
 Pi owns its conversation files; our records reference them rather than redefine
 their contents. A checkpoint is not a transcript or a workspace backup.
 
-**Next schemas remain to be defined one at a time:** the queue, run checkpoints,
-configuration/model choices, subagent assignments/results, per-inference model
-identity, and registry snapshots/refresh status. Their exact fields,
-file layout, and crash-safe persistence are not implemented yet.
+`schemas/storage/v1/checkpoint.schema.json` now defines the supervised checkpoint
+including assignments, attempts, plan revisions, decisions, and frozen config.
+Runtime validation also enforces sequential execution and history preservation.
+Queue membership is derived from intake/run linkage; it is not an independently
+mutable queue file. Registry and inference record contracts currently live in
+TypeScript. See `docs/supervised-milestone.md` for the implemented file layout,
+durable publication, and explicit operator-recovery requirement.

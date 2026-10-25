@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import { loadPreview, readPreviewTranscript } from "./preview.ts";
 import { loadWorkflowPreview, readWorkflowDocument } from "./workflow-preview.ts";
 import type { PreviewDirectories } from "./preview.ts";
+import { Store, safeRead } from "./backend/storage.ts";
+import { loadProduction } from "./backend/workflow.ts";
 
 // Explicit routes keep source, configuration, and credentials out of the web root.
 const assets = new Map([
@@ -21,7 +23,8 @@ const assets = new Map([
   ]],
 ]);
 
-export function createAppServer(preview?: PreviewDirectories) {
+export function createAppServer(preview?: PreviewDirectories, production?: Store) {
+  if (preview && production) throw new Error("Cannot mix preview and production");
   return createServer(async (request, response) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Content-Security-Policy",
@@ -46,15 +49,34 @@ export function createAppServer(preview?: PreviewDirectories) {
     }
     if (pathname === "/api/preview" || pathname === "/api/v1/preview") {
       try {
-        const data = !preview ? { mode: "production" } :
+        const data = production && pathname === "/api/v1/preview" ? await loadProduction(production) :
+          !preview ? { mode: "production" } :
           pathname === "/api/v1/preview" ? await loadWorkflowPreview() : await loadPreview(preview);
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         response.end(request.method === "HEAD" ? undefined : JSON.stringify(data));
       } catch {
         response.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
         response.end(request.method === "HEAD" ? undefined : JSON.stringify({
-          error: "Test fixtures unavailable or invalid. Check the test JSON files.",
+          error: production ? "Production records unavailable or invalid. No rollback attempted." :
+            "Test fixtures unavailable or invalid. Check the test JSON files.",
         }));
+      }
+      return;
+    }
+    const productionDocument = /^\/production\/v1\/documents\/(run-[a-zA-Z0-9-]+)\/((?:plans|handovers|exports)\/[a-zA-Z0-9_-]+\.(?:md|html))$/.exec(pathname);
+    if (production && productionDocument) {
+      try {
+        const data = await loadProduction(production);
+        const [, runId, path] = productionDocument;
+        if (!data.documents.some((doc) => doc.runId === runId && doc.path === path)) {
+          response.writeHead(404); response.end(); return;
+        }
+        const content = await safeRead(production.root, `runs/${runId}/${path}`);
+        response.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        response.writeHead(200, { "Content-Type": path.endsWith(".md") ? "text/plain; charset=utf-8" : "text/html; charset=utf-8" });
+        response.end(request.method === "HEAD" ? undefined : content);
+      } catch {
+        response.writeHead(503); response.end(request.method === "HEAD" ? undefined : "Production document unavailable\n");
       }
       return;
     }

@@ -1,4 +1,4 @@
-# Storage v1: work request
+# Storage v1: intake and supervised workflow
 
 `request.schema.json` defines the first production storage record. The fictional
 example is `examples/storage/v1/request.json`, relative to the application root.
@@ -26,10 +26,12 @@ those remain application responsibilities.
 
 Once accepted, the request remains unchanged. Queue position, execution status,
 run identity, provider/model selection, and results do not belong in this record.
-Their schemas and the durable intake file layout are not defined by this slice.
-No production writer or runtime validator is implemented here.
+`checkpoint.schema.json` now defines the separate supervised run state. The
+backend validates requests/checkpoints and durably publishes them; intake lives
+at `requests/<request-id>.json`. See `docs/supervised-milestone.md` for file layout,
+explicit launch commands, and the no-automatic-recovery boundary.
 
-Related agreed design in `SPEC.md` (not additional implemented schemas):
+Related workflow contracts in `SPEC.md`:
 
 - Each subagent handback saves a Markdown handover, then a Pi session HTML export,
   then a checkpoint referencing both files and the producing attempt/session.
@@ -48,11 +50,29 @@ Related agreed design in `SPEC.md` (not additional implemented schemas):
   separate from registry-derived estimates. See `SPEC.md` sections 5.1–5.3.
 
 These fields belong in future run/configuration/attempt/inference records and
-registry snapshots, not requests. Registry schemas and refresh behavior are not
-implemented by this request-schema slice.
+registry snapshots, not requests. Registry refresh and per-call persistence are
+implemented in the supervised backend; their standalone JSON schemas remain
+follow-up work.
 
 The `/v1` dashboard now previews this **full agreed workflow**, using separate
 provisional fixtures documented in `source/fixtures/README.md`. Its restored
 execution timeline uses explicitly recorded fixture observations, not inferred
 checkpoint-save times. The fixture shapes do not finalize the production
 checkpoint/configuration/assignment schemas, and do not add fields to requests.
+
+## Supervised checkpoint schema
+
+`checkpoint.schema.json` covers the explicitly bounded first milestone: one
+request, one worker, complete checkpoint revisions, frozen configuration,
+orchestrator turns, task/attempt identity, plan revisions, handover/export state,
+next-action decisions, and idempotency receipts. Receipt `argsHash` values prevent
+embedding plan/handover text in checkpoints. Terminal outcomes retain the
+orchestrator's `resultSummary` separately from its rationale.
+
+Apply Draft 2020-12 validation with date-time assertions. The application also
+checks frozen-configuration equality, monotonic revision/history preservation,
+sequential execution, and valid handback/export relationships. Runtime validation
+is in `source/backend/validation.ts`; the backend tests exercise the actual schema.
+A schema-valid file alone does not establish durable publication, worker liveness,
+or permission to replay an uncertain action. Early checkpoints may have no plan
+or session yet; the backend records these absences instead of fabricating files.

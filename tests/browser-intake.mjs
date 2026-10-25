@@ -105,7 +105,7 @@ try {
   assert.equal(await page.locator("#request-count").textContent(), "—");
   assert.ok(await page.locator("#test-notice").isHidden());
   assert.ok(await page.locator("#refresh-preview").isHidden());
-  assert.match(await page.locator("#requests-state").textContent(), /Production workflow loading is not implemented/);
+  assert.match(await page.locator("#requests-state").textContent(), /Production workflow is not enabled/);
   assert.deepEqual(errors, []);
   console.log("V1 browser checks passed: timeline, keyboard selection, attempts, handovers, checkpoints, exports, frozen models, refresh/zoom, mobile, safe prompts, and empty/error/production states.");
 } finally {

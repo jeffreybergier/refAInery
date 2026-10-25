@@ -101,8 +101,8 @@ command -v node >/dev/null || { echo "❌ Node.js is missing from the image." >&
 command -v npm >/dev/null || { echo "❌ npm is missing from the image." >&2; exit 1; }
 node -e '
 const [major, minor] = process.versions.node.split(".").map(Number);
-if (major < 22 || (major === 22 && minor < 18)) {
-  console.error("Node.js 22.18+ is required.");
+if (major < 22 || (major === 22 && minor < 19)) {
+  console.error("Node.js 22.19+ is required.");
   process.exit(1);
 }'
 if [ "$REFAINERY_MODE" = test ]; then
@@ -183,6 +183,7 @@ exec node /app/source/main.ts
         "-e", f"REFAINERY_CONFIG_DIR=/app/config/{'test' if test_directories else 'prod'}",
         "-e", f"REFAINERY_STORAGE_DIR=/app/storage/{'test' if test_directories else 'prod'}",
         "-v", f"{checkout}/source:{WORKSPACE}/source:ro",
+        "-v", f"{checkout}/schemas:{WORKSPACE}/schemas:ro",
         "-v", f"{checkout}/package.json:{WORKSPACE}/package.json:ro",
         "-v", f"{checkout}/package-lock.json:{WORKSPACE}/package-lock.json:ro",
         # Development-only host checkout; agents cannot edit live config.

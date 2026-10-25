@@ -1,8 +1,15 @@
 # refAInery
 
 A personal AI workshop with a dark, industrial Bootstrap control room.
-The current dashboard uses fictional, read-only fixtures to design the system
-before Pi or real orchestration is connected.
+The dashboard supports offline design fixtures and an opt-in **supervised Pi
+backend milestone**: one real request, one worker, durable plans/handovers,
+checkpoints, session exports, and recorded model identities. Automatic queue
+processing and recovery remain disabled.
+
+See `docs/supervised-milestone.md` for setup, storage, limits, and validation.
+Start a live scratch run with `python3 run-once.py --prompt-file
+examples/milestone/request.md --storage build/my-supervised-run`. This makes paid
+model calls using the existing 1Password item; it does not modify an app checkout.
 
 ## Dashboard versions
 
@@ -19,7 +26,11 @@ Run-relative documents live under `workflow-v1/`. See `source/fixtures/README.md
 for the record conventions and which fields are provisional. These do not finalize
 production schemas or implement a production reader, writer, or recovery engine.
 
-### V1 control room
+### V1 design preview
+
+The following describes the offline fixtures. The opt-in production view reuses
+the timeline and inspector, with recorded next-action decisions instead of the
+preview's accepted/rejected labels; see `docs/supervised-milestone.md`.
 
 - **Operations:** saved workflow phase, active runs/executions, FIFO request queue
   depth, pending subagent tasks, finished/failed/interrupted attempts, and run
@@ -46,7 +57,8 @@ Only genuinely undefined telemetry remains unavailable: token history/usage,
 live activity/heartbeat, factory stop/idle controls, general output-artifact
 inventory, and tool policy. Context capacity is not usage. Invalid records or
 missing referenced documents clear stale displays instead of falling back to an
-older checkpoint. Production mode loads neither fixture set.
+older checkpoint. Production mode loads neither fixture set. With `REFAINERY_BACKEND=1` and an
+explicit `REFAINERY_STORAGE_DIR`, v1 reads saved real workflow records instead.
 
 ## V2 control room
 
@@ -142,9 +154,10 @@ Transcript links open separate tabs containing explicitly labeled sample HTML,
 not actual Pi exports. Only files referenced by validated fixture tasks can be
 served; symlink escapes and arbitrary paths are rejected. Responses use a
 script-free CSP sandbox with an opaque origin. No agent HTML is embedded into
-the control room. Real Pi export generation is not implemented.
+the control room. The supervised backend generates real Pi exports with an added
+escaped static transcript for script-free browser inspection.
 
-## Agreed production storage design (not implemented)
+## Production storage and workflow
 
 `SPEC.md` describes the sequential workflow and saved run state. Each subagent
 writes a Markdown handover and stops on completion or at the context boundary.
@@ -165,13 +178,15 @@ fetch the model registry at startup and every hour, durably retain immutable
 catalog/pricing snapshots, and expose refresh failures and stale prices. Calls
 reference the snapshot current at dispatch so new prices do not rewrite history;
 registry estimates remain separate from provider-reported costs. See `SPEC.md`
-sections 5.1–5.3. These requirements are not yet implemented.
+sections 5.1–5.3. The supervised backend implements registry refresh/snapshots and
+per-call identity/usage provenance; economic estimates remain out of scope.
 
-The production storage implementation remains limited to the request JSON
-Schema and fictional example (the v1 dashboard adds provisional workflow fixtures):
-`schemas/storage/v1/request.schema.json` and `examples/storage/v1/request.json`.
-The production writer, checkpoint/model schemas, and Pi export integration are
-not implemented.
+Production request and supervised checkpoint schemas live under
+`schemas/storage/v1/`. The backend provides durable publication, explicit
+single-request scheduling, and Pi export integration. Other runtime records
+currently have TypeScript contracts rather than standalone JSON schemas.
+The original preview fixtures remain separate from production records. Full
+recovery and unattended scheduling are not implemented.
 
 ## Agent personality configuration
 
@@ -181,8 +196,9 @@ with embedded instructions and explicit `availableTools` allowlists. The sibling
 These are separate from models, sessions, and preview fixtures. Both personalities
 allow provider-native `web_search`; the worker also allows `web_fetch` and Pi's
 standard read/write/edit/bash tools. The config repo includes a permission-scoped
-web extension adapted from the operator's Pi setup. Production loading, tool
-enforcement, and workflow tools are not implemented. See
+web extension adapted from the operator's Pi setup. The supervised runner freezes
+these definitions and loads the reviewed web/workflow extensions explicitly;
+worker file/shell tools execute in an isolated container. See
 `schemas/config/v1/README.md` and `SPEC.md` section 5.4.
 
 ## Container launch
@@ -195,9 +211,10 @@ Open `http://localhost:8080`. The launcher publishes only on host loopback.
 It retains the existing 1Password, sibling `refAInery-config` checkout, GitHub,
 and Altivec SDK prerequisites. It mounts source and npm manifests read-only,
 installs locked production dependencies inside the disposable container, and
-starts the server in production mode, selecting `/app/config/prod` and
-`/app/storage/prod` for future integrations. Production config/storage loading
-is not implemented yet. Node.js 22.18+, npm, and flock must be available in the image.
+starts the default empty production server, selecting `/app/config/prod` and
+`/app/storage/prod`. It does not activate the supervised runner. Use the explicit
+host-side `run-once.py` recipe for that milestone. Node.js 22.19+, npm, and flock
+must be available in the image; schemas are mounted read-only alongside source.
 
 Bootstrap CSS and its JavaScript bundle are served locally, not from a CDN.
 No external fonts or image services are used. The initial dependency install

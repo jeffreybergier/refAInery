@@ -50,11 +50,14 @@ export function workflowPresentation(data) {
     return { ...run, checkpoint, status: checkpoint.phase === "awaiting-review" ? "awaiting-review" : checkpoint.status,
       summary: `Request ${run.requestId} · Phase: ${checkpoint.phase} · Latest checkpoint ${String(checkpoint.number).padStart(6, "0")}`,
       tasks, plan: document(run.id, checkpoint.plan),
+      plans: (checkpoint.plans ?? []).map((entry) => ({ ...entry, document: document(run.id, entry.path) })),
+      inferences: (data.inferences ?? []).filter((call) => call.runId === run.id),
+      production: data.mode === "production",
       request: data.requests.find((request) => request.id === run.requestId) };
   });
   const attempts = runs.flatMap((run) => run.tasks).filter((task) => task.kind === "subagent" && task.startedAt);
   const outcomes = {};
-  for (const review of ["accepted", "rejected", "pending", "not-submitted"]) {
+  for (const review of ["accepted", "rejected", "pending", "not-submitted", ...(data.mode === "production" ? ["decided"] : [])]) {
     outcomes[review] = attempts.filter((task) => task.details.review === review).length;
   }
   const executions = runs.flatMap((run) => run.tasks);

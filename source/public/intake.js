@@ -44,11 +44,11 @@ function renderOperations(preview) {
   const operations = preview.operations;
   const container = document.querySelector("#operation-stats");
   container.replaceChildren();
-  const activeRun = preview.runs.find((run) => run.checkpoint.status === "running");
+  const activeRun = preview.runs.find((run) => run.checkpoint.phase !== "ended");
   const cards = [
     ["Workflow phase", activeRun?.checkpoint.phase ?? "No active run", "Saved state, not a worker heartbeat"],
     ["Active runs", operations.activeRuns, "At most one top-level request"],
-    ["Active executions", operations.active, "Observed at the frozen snapshot"],
+    ["Active executions", operations.active, preview.mode === "production" ? "Last saved execution state; not a heartbeat" : "Observed at the frozen snapshot"],
     ["Queued requests", operations.queuedRequests, "FIFO · separate from subwork"],
     ["Pending subagent tasks", operations.pendingTasks, "Inside existing runs"],
     ["Finished attempts", operations.finished, "Includes context handbacks; not acceptance"],
@@ -63,9 +63,15 @@ function renderOperations(preview) {
     column.append(card);
     container.append(column);
   }
-  renderOutcomes(operations.outcomes);
+  renderOutcomes(operations.outcomes, preview.mode === "production");
 }
-function renderOutcomes(outcomes) {
+function renderOutcomes(outcomes, production = false) {
+  if (production) {
+    document.querySelector("#outcome-chart").replaceChildren(element("p", "small",
+      `${outcomes.decided} decisions recorded · ${outcomes.pending} awaiting decision · ${outcomes["not-submitted"]} not submitted`));
+    document.querySelector("#outcome-note").textContent = "Decisions are saved next actions, not accepted/rejected reviews or independently verified success.";
+    return;
+  }
   const total = outcomes.accepted + outcomes.rejected;
   const rate = total ? Math.round(outcomes.accepted / total * 100) : null;
   const svg = (tag, attributes, text) => {
@@ -126,14 +132,29 @@ function runDetails(run) {
   const decisions = element("details", "my-3");
   decisions.append(element("summary", "", `Applied orchestrator decisions (${checkpoint.decisions.length})`));
   for (const decision of checkpoint.decisions) decisions.append(element("p", "mt-2",
-    `${utc(decision.at)} · ${decision.attemptId} · ${decision.review}: ${decision.summary}`));
+    `${utc(decision.at)} · ${decision.attemptId ?? "Initial plan"} · ${decision.action ?? decision.review}: ${decision.summary}`));
   section.append(decisions);
   const history = element("details", "checkpoint-history my-3");
-  history.append(element("summary", "", `Saved checkpoints (${run.checkpoints.length} illustrative snapshots)`));
+  history.append(element("summary", "", `Saved checkpoints (${run.checkpoints.length}${run.production ? " durable snapshots" : " illustrative snapshots"})`));
   for (const saved of run.checkpoints) history.append(disclosure(
     `${String(saved.number).padStart(6, "0")}.json · ${utc(saved.savedAt)} · ${saved.phase}`,
     JSON.stringify(saved, null, 2)));
   section.append(history);
+  if (run.production) {
+    if (checkpoint.failure) section.append(element("p", "text-warning", checkpoint.failure));
+    if (checkpoint.resultSummary) section.append(disclosure("Final outcome summary", checkpoint.resultSummary));
+    const plans = element("details", "my-3");
+    plans.append(element("summary", "", `Plan history (${run.plans.length})`));
+    for (const plan of run.plans) plans.append(disclosure(`${plan.path} · ${plan.turnId}`, plan.document?.text ?? "Unavailable"));
+    section.append(plans);
+    const calls = element("details", "my-3");
+    calls.append(element("summary", "", `Inference records (${run.inferences.length})`));
+    for (const call of run.inferences) {
+      calls.append(element("p", "small text-break", `${call.personalityId} · ${call.status} · Requested: ${call.requestedModel} · Actual (provider-reported): ${call.actualModel ?? "unknown"}`),
+        disclosure(`${call.id} · model, usage and pricing provenance`, JSON.stringify(call, null, 2)));
+    }
+    section.append(calls);
+  }
   return section;
 }
 function renderConfiguration(preview) {
@@ -148,6 +169,7 @@ function renderConfiguration(preview) {
       element("p", "small", `Orchestrator selection: ${config.orchestratorModel}`));
     for (const model of config.models) card.append(element("p", "small text-break",
       `${model.id}: ${model.provider} / ${model.modelId} · ${model.contextWindow.toLocaleString("en-US")} tokens`));
+    for (const agent of config.personalities ?? []) card.append(element("p", "small text-break", `${agent.name} (${agent.role}): ${agent.availableTools.join(", ") || "no tools"}`));
     card.append(element("p", "small text-body-secondary mb-0", "Frozen for this run and recovery. Subagents select from this allowlist; no silent fallback."));
     column.append(card);
     container.append(column);
@@ -178,19 +200,39 @@ async function refresh() {
     const data = await response.json();
     error.hidden = true;
     document.querySelector("#test-notice").hidden = data.mode !== "test";
-    button.hidden = data.mode !== "test";
-    if (data.mode !== "test") {
-      clearWorkflow("Production workflow loading is not implemented. No production requests or runs are loaded.");
+    const production = data.mode === "production" && data.schemaVersion === 1;
+    button.hidden = data.mode !== "test" && !production;
+    button.textContent = production ? "Refresh saved workflow" : "Refresh fixtures";
+    if (data.mode !== "test" && !production) {
+      clearWorkflow("Production workflow is not enabled. Set REFAINERY_BACKEND=1 with explicit storage. No production requests or runs are loaded.");
       return;
+    }
+    if (production) {
+      const notes = {
+        "workflow-contract-note": "Supervised production milestone: one request, one worker, explicit plan revisions and saved decisions. No automatic recovery or queue draining.",
+        "token-history-note": "Interval charts are not implemented. Per-call usage and reported costs are available in the run inspector.",
+        "telemetry-note": "Saved state is not a worker heartbeat. Context capacity is 250,000 tokens; long-context handback still needs live validation.",
+        "queue-contract-note": "Unclaimed intake records define queue membership; dispatch is explicit and blocked by unfinished runs.",
+        "configuration-note": "Actual frozen model/personality definitions for each run. Model capacity was checked against the provider catalog; runtime limits remain provider-controlled.",
+        "storage-contract-note": "Immutable requests, plans, handovers, checkpoint revisions and inference records. Pi owns session files. Native HTML exports include a script-free transcript view.",
+        "dashboard-footer": "refAInery / V1 supervised production workflow",
+      };
+      for (const [id, text] of Object.entries(notes)) document.getElementById(id).textContent = text;
     }
     const preview = workflowPresentation(data);
     renderOperations(preview);
     renderConfiguration(preview);
     renderRequests(preview.requests, document.querySelector("#request-list"), preview);
     mountFloor(preview, document.querySelector("#floor-runs"), executionCard, { runDetails,
-      note: `TEST snapshot: ${utc(data.asOf)}. Provisional observed execution timestamps, not checkpoint-save times or CPU activity. One run at a time; sequential subagents. Review waiting does not extend bars. Finished is not accepted. Blue fill = selected.` });
+      note: production ? `PRODUCTION · Saved workflow observed ${utc(data.asOf)}. Supervised single-request execution; no automatic recovery or queue draining. Blue fill = selected.` :
+        `TEST snapshot: ${utc(data.asOf)}. Provisional observed execution timestamps, not checkpoint-save times or CPU activity. One run at a time; sequential subagents. Review waiting does not extend bars. Finished is not accepted. Blue fill = selected.` });
     document.querySelector("#request-count").textContent = preview.requests.length.toLocaleString("en-US");
-    document.querySelector("#snapshot-time").textContent = `Frozen workflow snapshot · ${utc(data.asOf)}`;
+    document.querySelector("#snapshot-time").textContent = `${production ? "PRODUCTION saved workflow" : "Frozen workflow snapshot"} · ${utc(data.asOf)}`;
+    if (production && data.registry) {
+      const last = data.registry.lastSuccessAt;
+      const state = !last ? "unavailable" : Date.parse(data.asOf) - Date.parse(last) >= 3600000 ? "STALE" : "recently fetched";
+      document.querySelector("#snapshot-time").textContent += ` · Prices ${state}${data.registry.error ? " · refresh degraded" : ""}`;
+    }
     document.querySelector("#workflow-data").hidden = false;
     document.querySelector("#operations-empty").hidden = true;
     const empty = document.querySelector("#floor-empty");
@@ -198,12 +240,13 @@ async function refresh() {
     empty.textContent = "No runs in this snapshot. Queued requests are not past executions.";
     const requestsState = document.querySelector("#requests-state");
     requestsState.hidden = preview.requests.length > 0;
-    requestsState.textContent = "No request fixtures in this collection. This does not establish that the factory is idle.";
+    requestsState.textContent = production ? "No requests in this collection. This does not establish that the factory is idle." :
+      "No request fixtures in this collection. This does not establish that the factory is idle.";
     document.querySelector("#queue-state").textContent = preview.queue.length ?
       `FIFO request queue: ${preview.queue.join(" → ")}. Starts only after the current run ends and workers stop.` : "No queued requests recorded. Factory idle/stopped state remains unknown.";
   } catch {
-    clearWorkflow("Workflow fixtures unavailable. No older-checkpoint or production fallback was attempted.");
-    error.textContent = "V1 workflow preview could not be loaded. Check request/checkpoint fixtures and referenced documents, then refresh.";
+    clearWorkflow("Workflow records unavailable. No older-checkpoint or production fallback was attempted.");
+    error.textContent = "V1 workflow could not be loaded. Check request/checkpoint records and referenced documents, then refresh.";
     error.hidden = false;
     button.hidden = false;
   } finally {
