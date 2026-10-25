@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Type as SchemaType, TSchema } from "@earendil-works/pi-ai";
 
+// AGENT INSTRUCTION: Workflow tool names and descriptions are user-authored.
+// Ask the user for explicit permission before changing either, including wording
+// cleanups, renames, or prompt "improvements". Do not change them without approval.
+
 type Action = "update_plan" | "assign_subagent" | "submit_handover" | "finish_run";
 type Host = (callId: string, name: Action, args: Record<string, unknown>) => Promise<unknown>;
 
