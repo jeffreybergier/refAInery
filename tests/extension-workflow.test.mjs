@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { loadConfiguration } from '../source/backend/config.ts';
 import disabled, { createWorkflowExtension } from '../source/extensions/workflow.ts';
 
 // Registration/host-boundary tests. Real TypeBox validation is exercised by
@@ -13,8 +14,9 @@ const Type = {
 };
 
 test('personalities expose only their workflow tools',async()=>{
-  for(const id of ['orchestrator','worker']) {
-    const agent=JSON.parse(await readFile(new URL(`../config/agents/${id}.json`,import.meta.url),'utf8'));
+  const config = await loadConfiguration(fileURLToPath(new URL('../config/', import.meta.url)));
+  for(const agent of config.personalities) {
+    const id = agent.id;
     const tools=[];
     createWorkflowExtension(Type,agent.availableTools,async()=>({saved:true}))({registerTool:(tool)=>tools.push(tool)});
     assert.deepEqual(tools.map(t=>t.name),id==='worker' ? ['finish_task'] : ['update_plan','spawn_subagent','finish_request']);

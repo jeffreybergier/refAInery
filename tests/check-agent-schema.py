@@ -40,12 +40,17 @@ class AgentSchemaTests(unittest.TestCase):
         agent.update(id="orchestrator", role="orchestrator", availableTools=[])
         self.validator.validate(agent)
 
-    def test_every_field_is_required(self):
-        for field in VALID:
+    def test_overlay_fields_are_required(self):
+        for field in SCHEMA["required"]:
             with self.subTest(field=field):
                 agent = deepcopy(VALID)
                 del agent[field]
                 self.assertFalse(self.validator.is_valid(agent))
+
+    def test_tools_are_optional(self):
+        agent = deepcopy(VALID)
+        del agent["availableTools"]
+        self.validator.validate(agent)
 
     def test_invalid_values(self):
         cases = {

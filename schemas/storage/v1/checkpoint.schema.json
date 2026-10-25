@@ -26,6 +26,16 @@
         } },
         "orchestratorModel": { "const": "default" },
         "personalities": { "type": "array", "items": { "type": "object" } },
+        "agentText": {
+          "description": "Frozen harness text; optional for historical checkpoints.",
+          "type": "object", "additionalProperties": false,
+          "required": ["shared", "orchestrator", "subagent"],
+          "properties": {
+            "shared": { "$ref": "#/$defs/agentText" },
+            "orchestrator": { "$ref": "#/$defs/agentText" },
+            "subagent": { "$ref": "#/$defs/agentText" }
+          }
+        },
         "extensions": { "type": "array", "items": {
           "type": "object", "additionalProperties": false, "required": ["name", "code", "sha256"],
           "properties": { "name": { "enum": ["workflow", "web-search"] }, "code": { "$ref": "#/$defs/text" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
@@ -73,6 +83,7 @@
     "resultSummary": { "type": ["string", "null"] }
   },
   "$defs": {
+    "agentText": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])", "maxLength": 128 },
     "text": { "type": "string", "pattern": "\\S" },
     "time": { "type": "string", "format": "date-time", "pattern": "Z$" },

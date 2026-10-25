@@ -97,6 +97,22 @@ short example above intentionally exhausts before completing a run.
 `--prompt-file request.md` can override the scenario's prompt, but does not make
 the scripted provider understand or dynamically solve that request.
 
+## Agent roles and personalities
+
+The harness owns the fundamental orchestrator and subagent contracts. Review
+instructions and prompts in the marked top sections of `source/agents/shared.ts`,
+`orchestrator.ts`, and `subagent.ts`; workflow descriptions and corrective guidance
+have equivalent sections in `source/extensions/workflow.ts` and
+`source/backend/workflow.ts`.
+
+Config files `agents/orchestrator.json` and `agents/worker.json` are optional
+personality overlays, not replacements for those contracts. With neither file,
+the built-in agents still work. Invalid files fail validation. New run snapshots
+retain the composed instructions, personality text, tools, and harness templates.
+See [the personality contract](schemas/config/v1/README.md) for examples and
+legacy tool-allowlist compatibility. Selection remains one orchestrator and one
+worker, not a generalized personality catalog.
+
 ## Production
 
 Review `refAInery-config/prod/model.json` and `prod/agents/*.json`. The model file

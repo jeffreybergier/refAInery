@@ -1,78 +1,78 @@
-# Configuration v1: agent personalities
+# Configuration v1: optional agent personalities
 
-`agent.schema.json` defines one self-contained JSON file per personality under
-`refAInery-config/<test|prod>/agents/<id>.json`. The application owns this schema;
-the configuration repository owns the definitions. Both environments use this
-same schema and backend. Historical presentation fixtures are separate.
+The harness owns two complete roles in `source/agents/orchestrator.ts` and
+`source/agents/subagent.ts`. Configuration supplies optional personality overlays
+at `refAInery-config/<test|prod>/agents/orchestrator.json` and `agents/worker.json`.
+Either or both files (or the agents directory) may be absent. Missing files use
+built-in roles; malformed files, mismatched IDs/roles, and unreadable files fail
+validation. The configuration root itself must exist.
 
-All six fields are required; unknown fields are rejected:
+```json
+{
+  "schemaVersion": 1,
+  "id": "worker",
+  "name": "Careful Worker",
+  "role": "subagent",
+  "instructions": "Favor focused changes and explain technical tradeoffs plainly."
+}
+```
 
-| Field | Contract |
-| --- | --- |
-| `schemaVersion` | Integer `1` |
-| `id` | Stable personality ID; 1–128 ASCII letters/digits/underscores/hyphens, starting with a letter or digit |
-| `name` | Nonblank display name |
-| `role` | `orchestrator` or `subagent` |
-| `instructions` | Nonblank embedded instructions; Markdown allowed, whitespace preserved |
-| `availableTools` | Explicit array of unique server tool IDs; empty means no tools |
+The first five fields are required when a file is present. Unknown fields are
+rejected. Names and instructions must be nonblank. IDs are case-sensitive,
+1–128 ASCII letters/digits/underscores/hyphens, starting with a letter or digit.
+The current single-worker runner accepts only the two filenames/roles above;
+this is not yet a catalog of dynamically selectable personalities.
 
-A personality is reusable configuration, not a session or attempt. Model
-selection, requested/actual model identity, credentials, and execution state do
-not belong here. JSON strings can use `\n` for multiline instructions; there is
-no separate instruction-file reference.
+Personality instructions supplement, never replace, the role contract. Their
+whitespace is preserved. They describe tone, expertise, and working preferences,
+not the workflow protocol. Model selection, credentials, and execution state do
+not belong in personality files. There is no separate instruction-file reference.
 
-## Backend validation and enforcement
+## Tools and enforcement
 
-Structural validation uses JSON Schema Draft 2020-12. The configuration loader
-must additionally reject duplicate personality IDs, basename/ID mismatches,
-unknown tool IDs, and tools disallowed by role or server policy. IDs are
-case-sensitive. A wildcard is not a tool ID; omitted tools are not granted.
-Adding tools to the catalog must never expand an existing allowlist implicitly.
-Do not silently drop an invalid tool or silently enable default Pi tools.
+`availableTools` remains an optional compatibility field. If omitted, the
+orchestrator gets `update_plan`, `spawn_subagent`, and `finish_request`; the
+subagent gets `read`, `write`, `edit`, `bash`, and `finish_task`.
 
-The server owns tool implementations and exposes only the resolved allowlist to
-each agent. Workflow delegation is restricted to orchestrators; subagents cannot
-delegate. Tool permissions must be enforced outside the instructions. Broad
-shell access can bypass the absence of dedicated tools, so workspace/network
-isolation requires separate execution-environment enforcement.
+Explicit lists must contain unique role-authorized IDs and retain all required
+workflow tools. They can restrict optional tools. For compatibility, production
+configurations may also explicitly select the role-authorized `web_search`
+capability, plus `web_fetch` for subagents. Web capabilities are not enabled by
+default, so built-in roles also work with the offline scripted provider.
+Unsupported transport/capability combinations still fail session creation.
 
-At run creation, freeze the complete personality definitions, resolved tool
-allowlists, and tool catalog/implementation version with the run configuration.
-Each attempt references its personality ID in that snapshot. Reject recovery
-when the required tool implementation is unavailable rather than silently
-substituting changed behavior. Active runs do not reread edited personalities.
-The supervised checkpoint now includes these frozen definitions and the fixed
-role-specific catalog implemented in `source/backend/config.ts`. A generalized
-top-level configuration schema and recovery mechanism remain future work.
+The JSON Schema validates structure; the loader enforces role policy. Neither
+personality text nor prompt precedence is a security boundary. Tool permissions,
+state transitions, assignment budgets, and workspace isolation remain enforced
+by code. Ambient Pi tools/extensions cannot re-enable denied capabilities.
+See `source/extensions/README.md` for provider-native web capability details.
 
-## Initial definitions
+## Human review and saved runs
 
-The sibling configuration repository contains `orchestrator.json` and
-`worker.json`. Production definitions both allow `web_search`. The worker additionally allows `web_fetch`
-and Pi's standard `read`, `write`, `edit`, and `bash` tools. The orchestrator also
-has `update_plan`, `spawn_subagent`, and `finish_request`; the worker has
-`finish_task`. Test definitions omit web capabilities. The application-owned
-`source/extensions/workflow.ts` delegates persistence to the backend.
-The reviewed `source/extensions/web-search.ts`
-provides session-scoped provider-native search/fetch declarations, not local Pi
-tool registrations. The future server catalog must distinguish native provider
-capabilities from local tools and validate transport support before use.
+Review behavior in the marked text sections at the top of:
 
-Neither definition is execution-ready merely because it passes structural
-validation. The backend must resolve every tool/capability, explicitly select
-local Pi tools, and load only reviewed extensions with the frozen allowlist.
-Ambient extensions must not be allowed to re-enable denied capabilities. See the
-application's `source/extensions/README.md` for the web extension contract.
+- `source/agents/shared.ts`: shared instructions and corrective guidance.
+- `source/agents/orchestrator.ts`: role instructions, planning and review prompts.
+- `source/agents/subagent.ts`: role instructions, handover format, assignment and
+  context-handback prompts. Backend handover validation uses the same template.
+- `source/extensions/workflow.ts`: workflow tool descriptions, unchanged in this
+  refactor. Schemas and handlers follow the text section.
+- `source/backend/workflow.ts`: corrective workflow guidance, followed by state
+  and persistence logic. Ordinary diagnostic errors stay near their checks.
 
-The supervised runner now loads these configurations, freezes run snapshots,
-selects exact tools, and routes worker filesystem/shell operations into an
-isolated Docker workspace. See `docs/supervised-milestone.md` for boundaries;
-structural validation is not a substitute for runtime enforcement.
+Prompt builders live below the text sections. Dynamic input is substituted once,
+not recursively interpreted as a template. Review prompts retain the explicit
+untrusted-content boundary and JSON encoding for subagent handovers. Avoid
+adding inline behavioral prose to `runner.ts` or `pi.ts`.
 
-## Contract checks
+Each new run freezes the fully composed system instructions, original optional
+personality instructions, resolved tools, harness text/templates (`agentText`),
+and extension source/hashes. Old checkpoints without `agentText` remain readable.
+Changing either repository does not rewrite earlier snapshots. Automatic replay
+or recovery remains unsupported.
 
-`python3 refinery.py test check` runs the Draft 2020-12 contract suite in Docker,
-including filename/ID matching and cross-file uniqueness for the test config.
-No host Python package installation, Node setup or model credentials are needed.
-The shared backend separately validates role-specific tool catalog membership. Identifier patterns use a strict end-of-input
-assertion to reject final newlines, which a bare `$` can accept.
+## Checks
+
+`python3 refinery.py test check` runs structural schema tests, loader/default and
+composition tests, workflow contracts, and real scripted Pi workflows with and
+without personality files, all inside Docker. No model credentials are needed.

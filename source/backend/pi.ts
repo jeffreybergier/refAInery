@@ -12,6 +12,8 @@ import type { Sandbox } from "./sandbox.ts";
 import { piExportDocument } from "./pi-export.ts";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { ScriptedResponses } from "./scenario.ts";
+import { subagentText } from "../agents/subagent.ts";
+import { sharedText } from "../agents/shared.ts";
 
 type Raw = Record<string, unknown>;
 export interface Inference {
@@ -113,15 +115,13 @@ export class PiAdapter {
     const resourceLoader = new DefaultResourceLoader({
       cwd: this.sandbox.workspace, agentDir, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-      systemPrompt: personality.instructions + "\n\nWorkspace: /workspace in an isolated container. Do not access credentials. " +
-        "Use workflow tools, not prose, to yield or finish. Make terminal workflow calls alone. " +
-        "This milestone permits one worker assignment and short responses. Do not use web search unless the task requires it.",
+      systemPrompt: personality.instructions,
       extensionFactories: [
         web.createWebSearchExtension(personality.availableTools, model),
         workflow.createWorkflowExtension(Type, personality.availableTools,
           async (callId: string, name: string, args: Raw) => {
             if (this.fatal) throw new Error("Run halted");
-            if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error("Context handback must use context-limit");
+            if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error(sharedText.contextStopReasonRequired);
             return this.workflow.action(personality.role, sessionId, callId, name, args);
           }),
         (pi: ExtensionAPI) => { pi.on("session_before_compact", () => ({ cancel: true })); },
@@ -152,9 +152,9 @@ export class PiAdapter {
       const terminal = ["spawn_subagent", "finish_task", "finish_request"];
       const calls = context.assistantMessage.content.filter((c) => c.type === "toolCall");
       if (calls.some((c) => terminal.includes(c.name)) && calls.length !== 1) {
-        return { block: true, reason: "Yielding workflow tools must be called alone" };
+        return { block: true, reason: sharedText.terminalCallRequired };
       }
-      if (contextHandback && context.toolCall.name !== "finish_task") return { block: true, reason: "Handback required" };
+      if (contextHandback && context.toolCall.name !== "finish_task") return { block: true, reason: sharedText.handbackRequired };
       return oldBefore?.(context, signal);
     };
     let current: Inference | null = null;
@@ -203,7 +203,7 @@ export class PiAdapter {
           await session.prompt(prompt);
           if (contextHandback && personality.role === "subagent" && this.workflow.state.phase === "executing" && !this.fatal) {
             session.setActiveToolsByName(["finish_task"]);
-            await session.prompt("The application context guard requires handback now. Call finish_task alone with stopReason context-limit and the complete required Markdown. Do not continue the assignment.");
+            await session.prompt(subagentText.contextHandback);
           }
           if (this.fatal) throw new Error("Run halted");
           const last = session.messages.filter((message) => message.role === "assistant").at(-1);

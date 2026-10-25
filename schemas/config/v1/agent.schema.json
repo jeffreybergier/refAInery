@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "refAInery agent personality v1",
-  "description": "Self-contained personality configuration, not a running agent or model selection. Must not contain credentials.",
+  "description": "Optional personality overlay on a harness-owned agent role, not a running agent or model selection. Must not contain credentials.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "name", "role", "instructions", "availableTools"],
+  "required": ["schemaVersion", "id", "name", "role", "instructions"],
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
     "id": {
@@ -20,7 +20,7 @@
       "type": "string",
       "minLength": 1,
       "pattern": "\\S",
-      "description": "Embedded instructions, preserved without trimming or rewriting. Markdown is allowed. Instructions are not a permissions boundary."
+      "description": "Additional personality guidance, preserved without trimming or rewriting. Supplements rather than replaces the harness role contract. Instructions are not a permissions boundary."
     },
     "availableTools": {
       "type": "array",
@@ -31,7 +31,7 @@
         "maxLength": 128,
         "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])"
       },
-      "description": "Required explicit allowlist of server catalog tool IDs. Empty means no tools. Catalog membership and role/policy authorization are validated by the backend, not this structural schema."
+      "description": "Optional legacy capability restriction. Omission uses the harness role tools. Explicit lists must be a subset of role tools and retain required workflow tools; the backend enforces this policy."
     }
   }
 }

@@ -2,6 +2,15 @@ import { createHash } from "node:crypto";
 import { Store, now, identity, numbered, requireText, readJSON, names, safeRead } from "./storage.ts";
 import type { Configuration } from "./config.ts";
 import { validateCheckpoint, validateRequest } from "./validation.ts";
+import { handoverSections } from "../agents/subagent.ts";
+
+// ── Workflow guidance: review corrective agent messages here ─────
+export const workflowGuidance = {
+  planRequired: "Call update_plan in this turn first",
+  assignmentLimit: "Milestone assignment budget exhausted; finish with an honest outcome",
+};
+
+// ── State, validation, and persistence ────────────────────────────
 
 export type ExportState = { state: "not-due" | "pending" | "saved" | "failed"; path: string | null; error: string | null };
 export const notDue = (): ExportState => ({ state: "not-due", path: null, error: null });
@@ -111,14 +120,14 @@ export class Workflow {
         this.state.plans.push({ path, turnId: turn.id, at: now() });
         result = { saved: true, planRevision: path };
       } else if (name === "spawn_subagent" || name === "finish_request") {
-        if (this.state.plans.at(-1)?.turnId !== turn.id) throw new Error("Call update_plan in this turn first");
+        if (this.state.plans.at(-1)?.turnId !== turn.id) throw new Error(workflowGuidance.planRequired);
         const summary = requireText(args.rationale);
         const last = this.state.tasks.at(-1)?.attempts.at(-1);
         if (last && (last.export.state !== "saved" || !last.endedAt)) throw new Error("Handback is not durable");
         if (name === "spawn_subagent") {
           if (args.personality !== "worker" || args.model !== "default") throw new Error("Selection outside frozen allowlist");
           // This milestone intentionally permits one worker only, not an unattended factory.
-          if (this.state.tasks.length >= 1) throw new Error("Milestone assignment budget exhausted; finish with an honest outcome");
+          if (this.state.tasks.length >= 1) throw new Error(workflowGuidance.assignmentLimit);
           const title = requireText(args.title, 512), assignment = requireText(args.assignment);
           this.state.tasks.push({ id: identity("task"), title, model: "default", assignment, attempts: [] });
           this.state.pendingAction = { kind: "assign" };
@@ -136,7 +145,7 @@ export class Workflow {
       if (name !== "finish_task" || !attempt || attempt.sessionId !== sessionId ||
           this.state.phase !== "executing" || attempt.handover) throw new Error("Tool not authorized for this attempt");
       const markdown = requireText(args.markdown);
-      for (const section of ["## Goal", "## Constraints & Preferences", "## Progress", "### Done", "### In Progress", "### Blocked", "## Key Decisions", "## Next Steps", "## Critical Context", "<read-files>", "</read-files>", "<modified-files>", "</modified-files>"]) {
+      for (const section of handoverSections) {
         if (!markdown.includes(section)) throw new Error("Missing required handover section");
       }
       if (!["success", "failure", "context-limit"].includes(String(args.stopReason))) throw new Error("Invalid stop reason");

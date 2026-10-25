@@ -2,6 +2,8 @@
 set -euo pipefail
 npm run check
 npm test
+# Both personality files are optional; an unmatched glob is not a filename.
+shopt -s nullglob
 python3 tests/check-agent-schema.py /app/config/agents/*.json
 # Disposable storage shares the selected test mount so Docker can bind workers.
 # It never resets or rewrites the interactive environment's runs.

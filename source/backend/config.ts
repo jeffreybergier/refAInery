@@ -1,4 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readFile, lstat, realpath, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { orchestrator, orchestratorText } from "../agents/orchestrator.ts";
+import { subagent, subagentText } from "../agents/subagent.ts";
+import { sharedText, systemPrompt } from "../agents/shared.ts";
 import { createHash } from "node:crypto";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { safeRead } from "./storage.ts";
@@ -6,33 +10,54 @@ import { safeRead } from "./storage.ts";
 export interface Personality {
   schemaVersion: 1; id: string; name: string; role: "orchestrator" | "subagent";
   instructions: string; availableTools: string[];
+  personalityInstructions?: string;
 }
 export const SDK_VERSION = "1.4.0";
 export const CATALOG_VERSION = "refainery-tools-v2";
-const allowed = {
-  orchestrator: ["web_search", "update_plan", "spawn_subagent", "finish_request"],
-  subagent: ["read", "write", "edit", "bash", "web_search", "web_fetch", "finish_task"],
-};
+interface PersonalityOverlay {
+  schemaVersion: 1; id: string; name: string; role: Personality["role"];
+  instructions: string; availableTools?: string[];
+}
 export async function loadConfiguration(root: string) {
   const schema = JSON.parse(await readFile(new URL("../../schemas/config/v1/agent.schema.json", import.meta.url), "utf8"));
-  const validate = new Ajv2020({ strict: true }).compile<Personality>(schema);
+  const validate = new Ajv2020({ strict: true }).compile<PersonalityOverlay>(schema);
+  await realpath(root); // A missing configuration root is not an absent overlay.
+  let hasAgents = true;
+  try { await lstat(join(root, "agents")); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    hasAgents = false;
+  }
+  // A dangling link or unreadable directory is an error, not missing config.
+  const agentFiles = hasAgents ? await readdir(join(root, "agents")) : [];
   const personalities: Personality[] = [];
-  for (const id of ["orchestrator", "worker"]) {
-    const data = JSON.parse(await safeRead(root, `agents/${id}.json`));
-    if (!validate(data) || data.id !== id || data.role !== (id === "worker" ? "subagent" : "orchestrator")) {
-      throw new Error("Invalid personality");
+  for (const base of [orchestrator, subagent]) {
+    let overlay: PersonalityOverlay | undefined;
+    if (agentFiles.includes(`${base.id}.json`)) {
+      const data: unknown = JSON.parse(await safeRead(root, `agents/${base.id}.json`));
+      if (!validate(data) || data.id !== base.id || data.role !== base.role) {
+        throw new Error("Invalid personality");
+      }
+      overlay = data;
     }
-    const agent = data as Personality;
-    if (agent.availableTools.some((tool) => !allowed[agent.role].includes(tool))) throw new Error("Unauthorized tool");
-    const required = id === "worker" ? ["finish_task"] : ["update_plan", "spawn_subagent", "finish_request"];
-    if (required.some((tool) => !agent.availableTools.includes(tool))) throw new Error("Missing workflow tool");
-    personalities.push(agent);
+    // Legacy explicit allowlists remain bounded by harness-owned role policy.
+    const availableTools = overlay?.availableTools ?? [...base.availableTools];
+    if (availableTools.some((tool) => !(base.allowedTools as readonly string[]).includes(tool))) throw new Error("Unauthorized tool");
+    if (base.requiredTools.some((tool) => !availableTools.includes(tool))) throw new Error("Missing workflow tool");
+    const instructions = base.role === "orchestrator" ? orchestratorText.instructions
+      : [subagentText.instructions, subagentText.handover].join("\n\n");
+    personalities.push({ schemaVersion: 1, id: base.id, role: base.role,
+      name: overlay?.name ?? base.name, availableTools,
+      instructions: systemPrompt(instructions, overlay?.instructions),
+      ...(overlay ? { personalityInstructions: overlay.instructions } : {}),
+    });
   }
   const extensions = [];
   for (const name of ["workflow", "web-search"]) {
     const code = await readFile(new URL(`../extensions/${name}.ts`, import.meta.url), "utf8");
     extensions.push({ name, code, sha256: createHash("sha256").update(code).digest("hex") });
   }
-  return { personalities, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };
+  const agentText = { shared: sharedText, orchestrator: orchestratorText, subagent: subagentText };
+  return { personalities, agentText, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };
 }
 export type Configuration = Awaited<ReturnType<typeof loadConfiguration>>;

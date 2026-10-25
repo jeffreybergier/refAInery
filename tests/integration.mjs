@@ -55,6 +55,18 @@ for (const mode of ['test', 'prod']) {
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   }
 }
+// Optional personalities: the same complete workflow works with no agent files.
+const defaultConfig = join(storage, 'default-config');
+const defaultStorage = join(storage, 'default-run');
+await mkdir(defaultConfig);
+await mkdir(defaultStorage);
+const defaultResult = await runOnce({ ...options, config: defaultConfig, storage: defaultStorage });
+assert.equal(defaultResult.outcome, 'completed');
+const defaults = (await loadProduction(new Store(defaultStorage))).runs[0].checkpoints.at(-1).configuration;
+assert.ok(defaults.agentText.subagent.contextHandback);
+assert.ok(defaults.personalities.every(p => !p.personalityInstructions));
+assert.ok(defaults.personalities[1].instructions.includes('## Critical Context'));
+
 // Exercise every new outcome through the real Pi schemas and runner, including
 // questions before dispatch. Keep these separate from the browser dataset.
 for (const [name, outcome, stopReason, beforeDispatch] of [
