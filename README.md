@@ -173,6 +173,16 @@ Schema and fictional example (the v1 dashboard adds provisional workflow fixture
 The production writer, checkpoint/model schemas, and Pi export integration are
 not implemented.
 
+## Agent personality configuration
+
+`schemas/config/v1/agent.schema.json` defines self-contained agent JSON files
+with embedded instructions and explicit `availableTools` allowlists. The sibling
+`refAInery-config/prod/agents/` contains initial orchestrator and worker definitions.
+These are separate from models, sessions, and preview fixtures. Production loading
+and tool enforcement are not implemented; the orchestrator deliberately has no
+tools until the workflow tool contract is defined. See `schemas/config/v1/README.md`
+and `SPEC.md` section 5.4.
+
 ## Container launch
 
 ```sh

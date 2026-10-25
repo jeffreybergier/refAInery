@@ -361,6 +361,36 @@ These are agreed backend requirements, not implemented schemas or runtime
 behavior. The production registry refresher, durable registry/inference writers,
 and dashboard presentation remain to be implemented with the Pi/backend slice.
 
+### 5.4 Agent personalities and tool allowlists
+
+`schemas/config/v1/agent.schema.json` defines one self-contained JSON file per
+personality under `refAInery-config/prod/agents/<id>.json`. Required fields are
+`schemaVersion`, `id`, `name`, `role`, embedded `instructions`, and
+`availableTools`. Roles are `orchestrator` and `subagent`; model selection and
+execution state remain separate. Unknown fields and duplicate tool IDs are
+rejected. Instructions may contain Markdown; no instruction-file link is needed.
+
+The server owns the tool catalog. Each personality explicitly selects a subset
+by stable tool ID: empty means none, missing is invalid, and unknown or
+unauthorized IDs must fail validation before execution. New catalog tools do not
+expand existing permissions. The server must expose only the resolved allowlist,
+not default tools plus advisory instructions. It enforces orchestrator-only
+delegation and sequential work. Shell access requires separate workspace/network
+isolation; an allowlist alone is not a sandbox.
+
+Freeze complete personalities, resolved tool permissions, and the tool catalog/
+implementation version in each run's configuration. Attempts reference a frozen
+personality ID. Configuration edits affect future runs only; recovery must not
+silently substitute changed tool implementations. The enclosing snapshot schema,
+loader, catalog, and enforcement are not implemented yet.
+
+The initial config repository contains orchestrator and worker personalities.
+The orchestrator has no tools pending the workflow tool contract. The worker
+requests `read`, `write`, `edit`, and `bash`; these are intended catalog IDs, not
+implemented server capabilities. These definitions are not activated by the
+current server. See `schemas/config/v1/README.md` for structural versus runtime
+validation requirements.
+
 ## 6. Checkpoints — saved run state
 
 A **checkpoint** is a complete saved snapshot of where a run stands. It lets the

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "refAInery agent personality v1",
+  "description": "Self-contained personality configuration, not a running agent or model selection. Must not contain credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "role", "instructions", "availableTools"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])",
+      "description": "Stable personality identity, unique within the loaded configuration. File basename must equal this ID; the loader enforces both rules."
+    },
+    "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "role": { "type": "string", "enum": ["orchestrator", "subagent"] },
+    "instructions": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Embedded instructions, preserved without trimming or rewriting. Markdown is allowed. Instructions are not a permissions boundary."
+    },
+    "availableTools": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(?![\\s\\S])"
+      },
+      "description": "Required explicit allowlist of server catalog tool IDs. Empty means no tools. Catalog membership and role/policy authorization are validated by the backend, not this structural schema."
+    }
+  }
+}
