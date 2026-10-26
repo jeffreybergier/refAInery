@@ -138,7 +138,7 @@ not a validated live-model prompting strategy. Do not add inline behavioral pros
 
 | Slot | Role and timing |
 | --- | --- |
-| `instructions` | System-role guidance, composed with shared harness instructions and optional personality. |
+| `instructions` | System-role guidance, composed with shared harness instructions and optional personality. Orchestrator marker: `{{ AVAILABLE_SUBAGENTS }}`. |
 | `firstPrompt` | Initial user-role guidance. Orchestrator markers: `{{ REQUEST }}`, `{{ PLAN_TEMPLATE }}`. Subagent markers: `{{ ASSIGNMENT }}`, `{{ REQUEST }}`, `{{ PLAN }}`, `{{ HANDOVER_TEMPLATE }}`. |
 | `firstReply` | Assistant-role history seeded once immediately after that initial user message, before the first model call. Blank means no seed. |
 | `finalAnswer` | User-role reminder after a successful text-only stop with no terminal workflow action. Blank disables it. |
@@ -159,6 +159,16 @@ inline in one pass instead of appending it again. Without that marker, the forma
 is appended as before. The composed system instructions are frozen separately
 from the authored prompt slots. Handover review data remains appended as JSON
 with its explicit untrusted-content boundary.
+
+The orchestrator's `instructions` supports `{{ AVAILABLE_SUBAGENTS }}`. During
+configuration loading, it expands to a bullet list of exact personality IDs from
+`subagentIds`, the same frozen list used by the tool schema and backend. It does
+not enumerate unlisted files, use display names, or hard-code implementer/tester.
+Legacy configurations list `worker`. Replacement is literal and single-pass.
+The authored marker remains in the template/prompt-slot snapshots; the expanded
+system instructions are saved in `personalities[].instructions` before dispatch.
+Later configuration edits do not change that run's list. This is additional
+model guidance, not a replacement for runtime selection enforcement.
 
 The first reply is a complete synthetic assistant message, not a partial-token
 prefill and not a user-role custom message. Pi persists it in JSONL and exports.

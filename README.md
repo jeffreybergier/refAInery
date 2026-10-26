@@ -112,6 +112,11 @@ seeds assistant-role history once. A nonblank `finalAnswer` enables one bounded
 reminder for a text-only stop without a terminal workflow action. Marker-only
 slots are authoring placeholders; request/assignment/handover data is still supplied.
 
+The orchestrator's `instructions` supports `{{ AVAILABLE_SUBAGENTS }}`, expanded
+at configuration loading to the exact IDs in the frozen subagent allowlist. This
+makes valid `spawn_subagent` personality values explicit in its system prompt;
+the tool schema and backend still enforce the same choices.
+
 The orchestrator's `firstPrompt` supports `{{ REQUEST }}` for the literal request
 and `{{ PLAN_TEMPLATE }}` for the editable `planTemplate` constant at the top of
 `source/agents/orchestrator.ts`. Expansion is single-pass: markers inside inserted

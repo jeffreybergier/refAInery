@@ -1,6 +1,6 @@
 import { readFile, lstat, realpath, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { orchestrator, orchestratorText } from "../agents/orchestrator.ts";
+import { orchestrator, orchestratorText, instructionsPrompt as orchestratorInstructionsPrompt } from "../agents/orchestrator.ts";
 import { subagent, subagentText, instructionsPrompt } from "../agents/subagent.ts";
 import { instructions, workflowMessages, systemPrompt, resolveAgentText, type PersonalityPrompts } from "../agents/shared.ts";
 import { createHash } from "node:crypto";
@@ -78,7 +78,8 @@ export async function loadConfiguration(root: string) {
       // Retain the legacy role-wide snapshot for old config consumers.
       agentText.subagent = resolvedPrompts as typeof subagentText;
     }
-    const instructions = base.role === "orchestrator" ? resolvedPrompts.instructions
+    const instructions = base.role === "orchestrator"
+      ? orchestratorInstructionsPrompt(resolvedPrompts.instructions, subagentIds)
       : instructionsPrompt(resolvedPrompts.instructions, agentTemplates.subagent.handover);
     personalities.push({ schemaVersion: 1, id: base.id, role: base.role,
       name: overlay?.name ?? base.name, availableTools,

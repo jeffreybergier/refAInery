@@ -10,7 +10,7 @@ import { loadProduction } from '../source/backend/workflow.ts';
 import { workflowPresentation } from '../source/public/workflow.js';
 import { createAppServer } from '../source/server.ts';
 import { loadConfiguration } from '../source/backend/config.ts';
-import { firstPrompt as orchestratorFirstPrompt } from '../source/agents/orchestrator.ts';
+import { firstPrompt as orchestratorFirstPrompt, instructionsPrompt as orchestratorInstructionsPrompt } from '../source/agents/orchestrator.ts';
 import { firstPrompt as subagentFirstPrompt, instructionsPrompt } from '../source/agents/subagent.ts';
 
 const storage = process.env.REFAINERY_CHECK_STORAGE;
@@ -55,6 +55,13 @@ const entries = (await Promise.all(sessions.map(file => readFile(store.path('run
 const sessionHeaders = entries.filter(e => e.type === 'session');
 assert.equal(sessionHeaders.length, 2);
 assert.ok(sessionHeaders.every(e => e.cwd === workspace));
+const orchestratorSystem = entries.find(e => e.type === 'message' && e.message.role === 'system' &&
+  e.message.toolsAdded?.some(tool => tool.name === 'spawn_subagent')).message;
+const orchestratorSystemText = [orchestratorSystem.content, ...Object.values(orchestratorSystem.sections ?? {})].join('\n');
+assert.ok(!orchestratorSystemText.includes('{{ AVAILABLE_SUBAGENTS }}'));
+for (const id of ['implementer', 'tester']) {
+  assert.ok(orchestratorSystemText.includes(`- "${id}"`));
+}
 const tools = entries.filter(e => e.type === 'message' && e.message.role === 'toolResult');
 for (const name of ['update_plan', 'spawn_subagent', 'write', 'read', 'edit', 'bash', 'finish_task', 'finish_request']) {
   assert.ok(tools.some(e => e.message.toolName === name && !e.message.isError), name);
@@ -255,7 +262,8 @@ for (const withPlan of [false, true]) {
       assert.ok(messages.some(message => message.role === 'system' &&
         [content(message), ...Object.values(message.sections ?? {})].some(section =>
           typeof section === 'string' && section.includes((text === subagentText
-            ? instructionsPrompt(text.instructions, text.handover) : text.instructions).trim()))));
+            ? instructionsPrompt(text.instructions, text.handover)
+            : orchestratorInstructionsPrompt(text.instructions, state.configuration.subagentIds)).trim()))));
       const firstUser = messages.findIndex(message => message.role === 'user');
       const task = state.tasks[0];
       const expectedPrompt = text === orchestratorText

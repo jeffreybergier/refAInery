@@ -51,6 +51,9 @@ REQUEST without asking for help. You MUST do the following:
 - Listen to the responses from the subagents and update the plan if needed with the update_plan tool
 - Do not treat subagent responses as the truth. Spawn more subagents to verify their claims
 
+Available subagents (use these exact IDs for spawn_subagent's personality):
+{{ AVAILABLE_SUBAGENTS }}
+
 When you are confident the REQUEST has been completed or you believe you cannot
 complete the REQUEST, call the finish_request tool to end the session.
 
@@ -101,6 +104,12 @@ export const orchestrator = {
   allowedTools: ["web_search", "update_plan", "spawn_subagent", "finish_request"],
   requiredTools: ["update_plan", "spawn_subagent", "finish_request"],
 } as const;
+
+/** Expand the frozen selection once; personality IDs are data, not templates. */
+export function instructionsPrompt(text: string, subagentIds: readonly string[]): string {
+  const available = subagentIds.map((id) => `- ${JSON.stringify(id)}`).join("\n");
+  return text.split("{{ AVAILABLE_SUBAGENTS }}").join(available);
+}
 
 export function firstPrompt(request: string,
   text = composePrompt(orchestratorText.firstPrompt), template = planTemplate): string {

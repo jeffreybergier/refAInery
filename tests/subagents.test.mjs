@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { Type } from '@earendil-works/pi-ai';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { loadConfiguration } from '../source/backend/config.ts';
+import { instructionsPrompt } from '../source/agents/orchestrator.ts';
 import { createWorkflowExtension } from '../source/extensions/workflow.ts';
 import { Store, now } from '../source/backend/storage.ts';
 import { Workflow, enqueue } from '../source/backend/workflow.ts';
@@ -48,6 +49,13 @@ test('explicit selection loads exactly the listed personalities with independent
   const config = await loadConfiguration(root);
   assert.deepEqual(config.subagentIds, ids);
   assert.deepEqual(config.personalities.map(p => p.id), ['orchestrator', ...ids]);
+  const orchestrator = config.personalities[0];
+  assert.ok(orchestrator.instructions.includes('- "implementer"\n- "tester"'));
+  for (const excluded of ['worker', 'extra', 'orchestrator']) {
+    assert.ok(!orchestrator.instructions.includes(`- "${excluded}"`));
+  }
+  assert.ok(!orchestrator.instructions.includes('{{ AVAILABLE_SUBAGENTS }}'));
+  assert.ok(config.agentTemplates.orchestrator.instructions.includes('{{ AVAILABLE_SUBAGENTS }}'));
   for (const id of ids) {
     const p = config.personalities.find(p => p.id === id);
     for (const [slot, value] of Object.entries(overlay(id).prompts)) {
@@ -57,6 +65,14 @@ test('explicit selection loads exactly the listed personalities with independent
     assert.deepEqual(p.availableTools, overlay(id).availableTools);
     assert.ok(p.instructions.includes(`${id} instructions`));
   }
+});
+
+test('available subagent expansion is literal, repeatable, and single-pass', () => {
+  const marker = '{{ AVAILABLE_SUBAGENTS }}';
+  assert.equal(instructionsPrompt(`Before\n${marker}\nAfter\n${marker}`, ids),
+    'Before\n- "implementer"\n- "tester"\nAfter\n- "implementer"\n- "tester"');
+  assert.equal(instructionsPrompt(marker, ['$&', marker]), `- "$&"\n- "${marker}"`);
+  assert.equal(instructionsPrompt('No marker', ids), 'No marker');
 });
 
 test('invalid manifests and missing or mismatched selected personalities fail closed', async t => {
@@ -98,7 +114,12 @@ test('real tool schema and backend both reject every choice outside the frozen s
   // Disk edits affect future runs, never choices in an active run.
   await json(join(root, 'subagents.json'), { schemaVersion: 1, allowed: ['extra'] });
   await json(join(root, 'agents/extra.json'), overlay('extra'));
-  assert.deepEqual((await loadConfiguration(root)).subagentIds, ['extra']);
+  const nextConfig = await loadConfiguration(root);
+  assert.deepEqual(nextConfig.subagentIds, ['extra']);
+  assert.ok(nextConfig.personalities[0].instructions.includes('- "extra"'));
+  assert.ok(!nextConfig.personalities[0].instructions.includes('- "implementer"'));
+  assert.ok(flow.state.configuration.personalities[0].instructions.includes('- "implementer"\n- "tester"'));
+  assert.ok(!flow.state.configuration.personalities[0].instructions.includes('- "extra"'));
   await assert.rejects(flow.action('orchestrator', 'session-orchestrator', 'extra-again', 'spawn_subagent', assignment('extra')), /outside frozen allowlist/);
   await flow.action('orchestrator', 'session-orchestrator', 'valid', 'spawn_subagent', assignment('tester'));
   assert.equal(flow.state.tasks[0].personality, 'tester');

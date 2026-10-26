@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfiguration } from '../source/backend/config.ts';
-import { orchestratorText, planTemplate, firstPrompt as orchestratorFirstPrompt, subagentReview } from '../source/agents/orchestrator.ts';
+import { orchestratorText, planTemplate, firstPrompt as orchestratorFirstPrompt, instructionsPrompt as orchestratorInstructionsPrompt, subagentReview } from '../source/agents/orchestrator.ts';
 import { subagentText, firstPrompt as subagentFirstPrompt, handoverSections, instructionsPrompt } from '../source/agents/subagent.ts';
 import { instructions, workflowMessages, composePrompt, resolveAgentText, personalityAdditionMarker as marker } from '../source/agents/shared.ts';
 import { Store } from '../source/backend/storage.ts';
@@ -26,7 +26,9 @@ test('absent personalities resolve complete default roles and frozen text', asyn
   const root = await setup(t), config = await loadConfiguration(root);
   assert.deepEqual(config.personalities.map(p => p.id), ['orchestrator', 'worker']);
   const [orchestrator, worker] = config.personalities;
-  assert.ok(orchestrator.instructions.includes(composePrompt(orchestratorText.instructions)));
+  assert.ok(orchestrator.instructions.includes(orchestratorInstructionsPrompt(
+    composePrompt(orchestratorText.instructions), ['worker'])));
+  assert.ok(!orchestrator.instructions.includes('{{ AVAILABLE_SUBAGENTS }}'));
   assert.ok(worker.instructions.includes(instructionsPrompt(composePrompt(subagentText.instructions), subagentText.handover)));
   assert.ok(worker.instructions.includes(subagentText.handover));
   for (const p of config.personalities) {
@@ -102,7 +104,7 @@ test('all personality prompt slots resolve before dispatch and retain their raw 
     assert.deepEqual(personality.personalityPrompts, prompts);
     const expectedInstructions = role === 'subagent'
       ? instructionsPrompt(config.agentText[role].instructions, config.agentText[role].handover)
-      : config.agentText[role].instructions;
+      : orchestratorInstructionsPrompt(config.agentText[role].instructions, config.subagentIds);
     assert.ok(personality.instructions.includes(expectedInstructions));
   }
   const frozenReply = config.agentText.subagent.firstReply;
