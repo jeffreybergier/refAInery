@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Store, requestIdentity, localIdentity } from '../source/backend/storage.ts';
 import { enqueue } from '../source/backend/workflow.ts';
 import { Sandbox, createWorkspace } from '../source/backend/sandbox.ts';
-import { workspaceInstructions } from '../source/agents/shared.ts';
+import { instructions, resolveWorkspaceInstructions } from '../source/agents/shared.ts';
 
 async function setup(t) {
   const root = await mkdtemp(join(tmpdir(), 'refainery-workspace-'));
@@ -37,7 +37,18 @@ test('requests own separate workspaces, and existing workspaces fail closed', as
   const sandbox = new Sandbox('test', firstPath);
   assert.equal(sandbox.workspace, firstPath);
   assert.equal(sandbox.workerWorkspace, `/workspace/${first.id}`);
-  assert.ok(workspaceInstructions(sandbox.workerWorkspace).includes(sandbox.workerWorkspace));
+  const guidance = resolveWorkspaceInstructions(instructions, sandbox.workerWorkspace);
+  assert.ok(guidance.includes(`Workspace: ${sandbox.workerWorkspace}`));
+  assert.ok(!guidance.includes('{{ CURRENT WORKING DIRECTORY }}'));
+});
+
+test('workspace placeholder replacement is literal, repeatable and single-pass', () => {
+  const marker = '{{ CURRENT WORKING DIRECTORY }}';
+  assert.ok(instructions.includes(marker));
+  const workspace = `/workspace/$&-${marker}`;
+  assert.equal(resolveWorkspaceInstructions(`${marker}\n${marker}`, workspace),
+    `${workspace}\n${workspace}`);
+  assert.equal(resolveWorkspaceInstructions('No marker', workspace), 'No marker');
 });
 
 test('workspace allocation does not adopt a pre-existing symlink', async t => {

@@ -174,7 +174,9 @@ New request IDs use the first two UUID sections, e.g. `request-550e8400-e29b`.
 Their shared working directory is `workspaces/<request-id>` under storage,
 passed to Pi as its controller-side cwd and mounted alone at
 `/workspace/<request-id>` in the worker. The agent instructions name that worker
-path. Workspace allocation fails if the directory already exists; there is no
+path by resolving `{{ CURRENT WORKING DIRECTORY }}` in the shared `instructions`
+text before agent sessions are created. Workspace allocation fails if the directory
+already exists; there is no
 collision search or retry. Tasks are numbered within the run (`task-001`), and
 attempts within each task (`attempt-001`). Stored attempt references include the
 task prefix (`task-001-attempt-001`) to keep handovers, exports and review

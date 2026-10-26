@@ -7,7 +7,7 @@ import { Sandbox, createWorkspace } from "./sandbox.ts";
 import { ScriptedResponses, type Scenario } from "./scenario.ts";
 import { firstPrompt as orchestratorFirstPrompt, subagentReview } from "../agents/orchestrator.ts";
 import { firstPrompt as subagentFirstPrompt } from "../agents/subagent.ts";
-import { workspaceInstructions } from "../agents/shared.ts";
+import { resolveWorkspaceInstructions } from "../agents/shared.ts";
 
 export interface RunOptions {
   storage: string; config: string; prompt: string; selectedModel: string;
@@ -49,7 +49,8 @@ export async function runOnce(options: RunOptions) {
     const workspace = store.path("workspaces", request.id);
     await createWorkspace(workspace);
     for (const personality of config.personalities) {
-      personality.instructions += `\n\n${workspaceInstructions(`/workspace/${request.id}`)}`;
+      personality.instructions = resolveWorkspaceInstructions(
+        personality.instructions, `/workspace/${request.id}`);
     }
     engine = new Workflow(store, request, { ...config, id: identity("config"),
       models: [{ id: "default", provider: scripted ? "faux" : "openrouter", modelId: options.selectedModel, contextWindow: 250000 }], orchestratorModel: "default" });

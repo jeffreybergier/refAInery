@@ -38,6 +38,7 @@ const workspace = store.path('workspaces', result.requestId);
 assert.equal(await readFile(join(workspace, 'hello.txt'), 'utf8'), 'Hello from refAInery.\n');
 for (const personality of run.checkpoints.at(-1).configuration.personalities) {
   assert.ok(personality.instructions.includes(`Workspace: /workspace/${result.requestId}`));
+  assert.ok(!personality.instructions.includes('{{ CURRENT WORKING DIRECTORY }}'));
 }
 const sandbox = JSON.parse(await readFile(store.path('runs', result.runId, 'sandbox.json'), 'utf8'));
 assert.equal(sandbox.workspace, workspace);

@@ -1,5 +1,7 @@
 // ── Agent text: review behavioral guidance here ──────────────────
-export const instructions = `Do not access credentials.
+export const instructions = `Workspace: {{ CURRENT WORKING DIRECTORY }} in an isolated container.
+All subagents for this request share this working directory.
+Do not access credentials.
 Use workflow tools, not prose, to yield or finish. Make terminal workflow calls alone.
 Keep responses short. Do not use web search unless the task requires it.`;
 
@@ -9,10 +11,6 @@ export const workflowMessages = {
   handbackRequired: "Handback required",
   contextStopReasonRequired: "Context handback must use context-limit",
 };
-
-export function workspaceInstructions(workspace: string): string {
-  return `Workspace: ${workspace} in an isolated container. All subagents for this request share this working directory.`;
-}
 
 // ── Prompt assembly: no behavioral prose below this line ─────────
 export const personalityAdditionMarker = "{{ OPTIONAL_PERSONALITY_ADDITION }}";
@@ -42,6 +40,10 @@ export function resolveAgentText<T extends Record<string, string>>(templates: T,
     }
   }
   return resolved as T;
+}
+
+export function resolveWorkspaceInstructions(text: string, workspace: string): string {
+  return text.split("{{ CURRENT WORKING DIRECTORY }}").join(workspace);
 }
 
 export function systemPrompt(roleInstructions: string): string {
