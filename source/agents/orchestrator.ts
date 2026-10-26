@@ -1,5 +1,10 @@
 import { composePrompt, promptWithContext, sharedText } from "./shared.ts";
 
+// AGENT INSTRUCTION: All prompts, guidance, and the plan template in this file
+// are user-authored. Never edit them without the user's explicit permission,
+// including wording cleanups, typo fixes, or prompt "improvements". Changes to
+// prompt assembly code do not grant permission to change the authored text.
+
 // Editable Markdown format supplied through {{ PLAN_TEMPLATE }}.
 export const planTemplate = `
 # Plan
