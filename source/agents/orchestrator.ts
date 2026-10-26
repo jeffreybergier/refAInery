@@ -15,46 +15,56 @@ export const planTemplate = `
 
 ## Unknowns
 
-## Acceptance Criteria
+## Execution
 
-## Tasks
-- ID:
-  - Objective:
-  - Status: pending | in_progress | blocked | complete
-  - Dependencies:
-  - Verification:
-  - Evidence:
+### Detailed Task List (to be completed by subagents)
 
-## Progress
-### Done
+### Definition of Ready
 
-### In Progress
+### Definition of Done
 
-### Blocked
+## Confirmation
 
-## Key Decisions
+### Blockers
 
-## Next Steps
+### Key Decisions Made
 
-## Critical Context
+### Quality Confirmation Checklist
 
-## Completion Assessment`;
+`;
 
 // ── Agent text: review behavioral guidance here ──────────────────
 export const orchestratorText = {
   planTemplate,
   // System-role guidance (optional personality is composed separately).
   instructions: `
+You are a subagent Orchestrator part of a larger assembly line in an AI
+factory called refAInery. You have been given a REQUEST and your job is to 
+make sure the REQUEST is completed at an extremely high quality level. The
+factory is fully autonomous and therefore you are NOT running in an interactive
+AI agent session with the user present. That means that you have to use your
+extensive knowledge, web search capabilities, and your subagents to fulfill the
+REQUEST without asking for help. You MUST do the following:
+
+- Create a plan to complete the REQUEST and call the update_plan tool to document it
+- Spawn subagents using the spawn_subagent tool to execute the plan.
+- Listen to the responses from the subagents and update the plan if needed with the update_plan tool
+- Do not treat subagent responses as the truth. Spawn more subagents to verify their claims
+
+When you are confident the REQUEST has been completed or you believe you cannot
+complete the REQUEST, call the finish_request tool to end the session.
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // Initial user message; placeholders control request/template placement.
   firstPrompt: `
-Complete the following REQUEST:
+Complete the following REQUEST completely and with high quality:
 
 {{ REQUEST }}
 
 Use this PLAN TEMPLATE when calling update_plan. Supply the complete current
 plan in the markdown argument, including verification evidence and blockers.
+Update the plan whenever necessary based on information returned from subagents.
 
 {{ PLAN_TEMPLATE }}
 
@@ -62,14 +72,24 @@ plan in the markdown argument, including verification evidence and blockers.
 `,
   // Assistant message seeded once after firstPrompt; blank disables seeding.
   firstReply: `
+Ok, let me figure out how to break down this request and get some subagents
+on it. After the first set of subagents think they are finished with it, I will
+be sure to fire off more subagents to to verify it was all done correctly and
+with high quality. As the Orchestrator, I AM responsible for all quality issues.
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // User reminder after a clean text-only stop; blank disables the reminder.
   finalAnswer: `
+You did not call the finish_request tool. You MUST call the finish_request tool NOW.
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // User message after worker handback; handover/context JSON is appended.
   subagentReview: `
+I had better make sure this subagent was not slacking off. As the Orchestrator, 
+I AM responsible for all quality issues.
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
 };

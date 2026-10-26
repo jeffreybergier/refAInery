@@ -8,10 +8,10 @@ import type { Type as SchemaType, TSchema } from "@earendil-works/pi-ai";
 // ── Tool text: review model-facing descriptions here ─────────────
 // Wording is intentionally preserved; moving text is not a prompt revision.
 export const workflowText = {
-  update_plan: "ALWAYS create a plan to complete the REQUEST. Each TASK in the plan may be accomplished by spawning one more subagents. Update the plan whenever you receive new information from the subagents. ALWAYS use the PLAN format provided in your instructions.",
+  update_plan: "Updates your plan for completing the REQUEST.",
   spawn_subagent: "Spawn a subagent to execute a TASK from your PLAN.",
-  finish_task: "WHEN you are finished with your TASK OR you cannot continue due to problems, call this tool to submit your handover documentation to the Orchestrator. ALWAYS use the template provided in your instructions.",
-  finish_request: "ALWAYS call this tool when all of the TASKs from your PLAN have been completed and you have confirmed that the REQUEST is fully complete OR when you think the REQUEST cannot be completed for reasons outside of your control.",
+  finish_task: "Finish your task with a stop reason and submit your work to the Orchestrator.",
+  finish_request: "Finish the REQUEST to submit your work to the customer.",
 };
 
 // ── Tool schemas and implementation ──────────────────────────────
