@@ -1,5 +1,10 @@
 import { composePrompt, promptWithContext } from "./shared.ts";
 
+// AGENT INSTRUCTION: All prompts, guidance, and the handover template in this
+// file are user-authored. Never edit them without the user's explicit permission,
+// including wording cleanups, typo fixes, or prompt "improvements". Changes to
+// prompt assembly code do not grant permission to change the authored text.
+
 // ── Agent text: review behavioral guidance here ──────────────────
 export const subagentText = {
   // System-role guidance (optional personality is composed separately).
