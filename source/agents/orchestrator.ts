@@ -1,13 +1,58 @@
 import { composePrompt, promptWithContext, sharedText } from "./shared.ts";
 
+// Editable Markdown format supplied through {{ PLAN_TEMPLATE }}.
+export const planTemplate = `
+# Plan
+
+## Goal
+
+## Assumptions
+
+## Unknowns
+
+## Acceptance Criteria
+
+## Tasks
+- ID:
+  - Objective:
+  - Status: pending | in_progress | blocked | complete
+  - Dependencies:
+  - Verification:
+  - Evidence:
+
+## Progress
+### Done
+
+### In Progress
+
+### Blocked
+
+## Key Decisions
+
+## Next Steps
+
+## Critical Context
+
+## Completion Assessment`;
+
 // ── Agent text: review behavioral guidance here ──────────────────
 export const orchestratorText = {
+  planTemplate,
   // System-role guidance (optional personality is composed separately).
   instructions: `
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
-  // Initial user message; request JSON is appended automatically.
+  // Initial user message; placeholders control request/template placement.
   firstPrompt: `
+Complete the following REQUEST:
+
+{{ REQUEST }}
+
+Use this PLAN TEMPLATE when calling update_plan. Supply the complete current
+plan in the markdown argument, including verification evidence and blockers.
+
+{{ PLAN_TEMPLATE }}
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // Assistant message seeded once after firstPrompt; blank disables seeding.
@@ -32,8 +77,14 @@ export const orchestrator = {
   requiredTools: ["update_plan", "spawn_subagent", "finish_request"],
 } as const;
 
-export function firstPrompt(request: string, text = composePrompt(orchestratorText.firstPrompt)): string {
-  return promptWithContext(text, { request });
+export function firstPrompt(request: string,
+  text = composePrompt(orchestratorText.firstPrompt), template = planTemplate): string {
+  // One pass: markers inside request/template data remain literal.
+  const rendered = text.replace(/\{\{ (REQUEST|PLAN_TEMPLATE) \}\}/g,
+    (_match, name: string) => name === "REQUEST" ? request : template);
+  // Preserve task delivery for older or deliberately blank prompt templates.
+  return text.includes("{{ REQUEST }}") ? rendered
+    : promptWithContext(rendered, { request });
 }
 export function subagentReview(attempt: { id: string; stopReason: string | null }, handover: string,
   text = composePrompt(orchestratorText.subagentReview)): string {

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfiguration } from '../source/backend/config.ts';
-import { orchestratorText, firstPrompt as orchestratorFirstPrompt, subagentReview } from '../source/agents/orchestrator.ts';
+import { orchestratorText, planTemplate, firstPrompt as orchestratorFirstPrompt, subagentReview } from '../source/agents/orchestrator.ts';
 import { subagentText, firstPrompt as subagentFirstPrompt, handoverSections } from '../source/agents/subagent.ts';
 import { sharedText, composePrompt, resolveAgentText, personalityAdditionMarker as marker } from '../source/agents/shared.ts';
 import { Store } from '../source/backend/storage.ts';
@@ -38,7 +38,7 @@ test('absent personalities resolve complete default roles and frozen text', asyn
   assert.deepEqual(config.agentTemplates, { shared: sharedText, orchestrator: orchestratorText, subagent: subagentText });
   assert.deepEqual(config.agentText, { shared: sharedText,
     orchestrator: resolveAgentText(orchestratorText), subagent: resolveAgentText(subagentText) });
-  assert.equal(config.agentText.orchestrator.firstReply.trim(), '');
+  assert.equal(config.agentText.orchestrator.firstReply, composePrompt(orchestratorText.firstReply));
   assert.equal(config.agentText.subagent.finalAnswer.trim(), '');
   // Snapshot schema accepts new text while existing historical tests omit it.
   const store = new Store(root);
@@ -164,6 +164,22 @@ test('invalid or unreadable overlays fail closed rather than using defaults', as
   await rm(join(root, 'agents'), { recursive: true });
   await symlink(join(root, 'missing-directory'), join(root, 'agents'));
   await assert.rejects(loadConfiguration(root), /ENOENT/);
+});
+
+test('orchestrator request and plan markers expand literally in one pass', () => {
+  const request = 'Literal $& $1 {{ PLAN_TEMPLATE }} {{ REQUEST }}';
+  const template = '# Custom plan\n{{ REQUEST }} $&';
+  assert.equal(orchestratorFirstPrompt(request,
+    'Plan: {{ PLAN_TEMPLATE }}\nRequest: {{ REQUEST }}\n{{ REQUEST }}', template),
+    `Plan: ${template}\nRequest: ${request}\n${request}`);
+  const prompt = orchestratorFirstPrompt('Do the work');
+  assert.ok(prompt.includes('Do the work'));
+  assert.ok(prompt.includes(planTemplate));
+  assert.ok(!prompt.includes('{{ REQUEST }}'));
+  assert.ok(!prompt.includes('{{ PLAN_TEMPLATE }}'));
+  assert.equal(orchestratorText.planTemplate, planTemplate);
+  assert.equal(orchestratorFirstPrompt('Task', '{{ PLAN_TEMPLATE }}', '# Plan'),
+    '# Plan\n\n' + JSON.stringify({ request: 'Task' }, null, 2));
 });
 
 test('named prompt slots preserve task data even with empty guidance', () => {

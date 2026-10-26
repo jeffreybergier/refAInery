@@ -66,7 +66,8 @@ export async function runOnce(options: RunOptions) {
     await engine.save();
     stage("orchestrator-planning");
     await engine.beginTurn();
-    await orchestrator.prompt(orchestratorFirstPrompt(request.prompt, config.agentText.orchestrator.firstPrompt));
+    await orchestrator.prompt(orchestratorFirstPrompt(request.prompt,
+      config.agentText.orchestrator.firstPrompt, config.agentText.orchestrator.planTemplate));
     await engine.endTurn();
     if (engine.state.pendingAction?.kind === "assign") {
       stage("worker-starting");

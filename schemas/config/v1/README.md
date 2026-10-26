@@ -100,7 +100,7 @@ Review behavior in the marked text sections at the top of:
 
 - `source/agents/shared.ts`: shared instructions and corrective guidance.
 - `source/agents/orchestrator.ts`: `instructions`, `firstPrompt`, `firstReply`,
-  `finalAnswer`, and `subagentReview`.
+  `finalAnswer`, and `subagentReview`, plus the editable `planTemplate` constant.
 - `source/agents/subagent.ts`: `instructions`, `firstPrompt`, `firstReply`, and
   `finalAnswer`, plus the handover format and context-handback prompt. Backend
   handover validation uses the same template.
@@ -117,15 +117,18 @@ not a validated live-model prompting strategy. Do not add inline behavioral pros
 | Slot | Role and timing |
 | --- | --- |
 | `instructions` | System-role guidance, composed with shared harness instructions and optional personality. |
-| `firstPrompt` | User-role guidance on the first session round, followed by the request or assignment as JSON. |
+| `firstPrompt` | Initial user-role guidance. Orchestrator markers `{{ REQUEST }}` and `{{ PLAN_TEMPLATE }}` insert the request and plan format; subagent assignment data is appended as JSON. |
 | `firstReply` | Assistant-role history seeded once immediately after that initial user message, before the first model call. Blank means no seed. |
 | `finalAnswer` | User-role reminder after a successful text-only stop with no terminal workflow action. Blank disables it. |
 | `subagentReview` | Orchestrator-only user-role guidance after a handover, followed by attempt ID, stop reason, and handover as JSON. |
 
-Data is appended independently of editable guidance, even when it is empty.
-Only the personality marker in harness templates is substituted, never request,
-assignment, or handover content. Review prompts retain the explicit untrusted-content
-boundary for subagent handovers.
+Orchestrator request and plan markers expand in one pass when building the initial
+message. Inserted request and plan content is not recursively substituted. The plan
+format comes from `planTemplate` at the top of `source/agents/orchestrator.ts` and is
+saved in the run snapshot. Without a request marker, request JSON is appended as a
+fallback, including for empty guidance. Assignment and handover data remain appended
+as JSON. Review prompts retain the explicit untrusted-content boundary for subagent
+handovers.
 
 The first reply is a complete synthetic assistant message, not a partial-token
 prefill and not a user-role custom message. Pi persists it in JSONL and exports.

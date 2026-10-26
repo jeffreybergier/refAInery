@@ -111,6 +111,13 @@ seeds assistant-role history once. A nonblank `finalAnswer` enables one bounded
 reminder for a text-only stop without a terminal workflow action. Marker-only
 slots are authoring placeholders; request/assignment/handover data is still supplied.
 
+The orchestrator's `firstPrompt` supports `{{ REQUEST }}` for the literal request
+and `{{ PLAN_TEMPLATE }}` for the editable `planTemplate` constant at the top of
+`source/agents/orchestrator.ts`. Expansion is single-pass: markers inside inserted
+request/template text stay literal. If `{{ REQUEST }}` is omitted, request JSON is
+still appended so blank or older templates cannot lose the task. The plan template
+is retained in each run's agent-text snapshot.
+
 Config files `agents/orchestrator.json` and `agents/worker.json` are optional
 personality overlays, not replacements for those contracts. Their optional
 `prompts` object uses the same slot names. Each addition is inserted at
