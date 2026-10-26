@@ -11,8 +11,24 @@ export const subagentText = {
   instructions: `
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
-  // Initial user message; assignment JSON is appended automatically.
+  // Initial user message; placeholders control task/context placement.
   firstPrompt: `
+Complete this ASSIGNMENT from the orchestrator:
+
+{{ ASSIGNMENT }}
+
+Use the original REQUEST and current PLAN as context for your assignment:
+
+REQUEST:
+{{ REQUEST }}
+
+PLAN:
+{{ PLAN }}
+
+Use this HANDOVER TEMPLATE when calling finish_task:
+
+{{ HANDOVER_TEMPLATE }}
+
 {{ OPTIONAL_PERSONALITY_ADDITION }}
 `,
   // Assistant message seeded once after firstPrompt; blank disables seeding.
@@ -58,6 +74,23 @@ export const subagent = {
 
 // The validation contract and the agent's template share one source of truth.
 export const handoverSections = subagentText.handover.split("\n").filter(Boolean);
-export function firstPrompt(assignment: string, text = composePrompt(subagentText.firstPrompt)): string {
-  return promptWithContext(text, { assignment });
+export function firstPrompt(assignment: string,
+  text = composePrompt(subagentText.firstPrompt),
+  context: { request?: string; plan?: string; handoverTemplate?: string } = {}): string {
+  const values: Record<string, string | undefined> = {
+    ASSIGNMENT: assignment,
+    REQUEST: context.request,
+    PLAN: context.plan,
+    HANDOVER_TEMPLATE: context.handoverTemplate ?? subagentText.handover,
+  };
+  // One pass: markers inside inserted task, context, or template stay literal.
+  const rendered = text.replace(/\{\{ (ASSIGNMENT|REQUEST|PLAN|HANDOVER_TEMPLATE) \}\}/g,
+    (_match, name: string) => {
+      const value = values[name];
+      if (value === undefined) throw new Error(`Missing subagent prompt context: ${name}`);
+      return value;
+    });
+  // Preserve task delivery for older or deliberately blank prompt templates.
+  return text.includes("{{ ASSIGNMENT }}") ? rendered
+    : promptWithContext(rendered, { assignment });
 }

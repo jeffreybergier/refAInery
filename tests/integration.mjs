@@ -9,6 +9,8 @@ import { Store } from '../source/backend/storage.ts';
 import { loadProduction } from '../source/backend/workflow.ts';
 import { createAppServer } from '../source/server.ts';
 import { loadConfiguration } from '../source/backend/config.ts';
+import { firstPrompt as orchestratorFirstPrompt } from '../source/agents/orchestrator.ts';
+import { firstPrompt as subagentFirstPrompt } from '../source/agents/subagent.ts';
 
 const storage = process.env.REFAINERY_CHECK_STORAGE;
 assert.ok(storage, 'check.sh supplies disposable storage');
@@ -142,7 +144,15 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
         [content(message), ...Object.values(message.sections ?? {})].some(section =>
           typeof section === 'string' && section.includes(text.instructions.trim()))));
       const firstUser = messages.findIndex(message => message.role === 'user');
-      assert.ok(content(messages[firstUser]).startsWith(text.firstPrompt));
+      const task = state.tasks[0];
+      const expectedPrompt = text === orchestratorText
+        ? orchestratorFirstPrompt(scenario.prompt, text.firstPrompt, text.planTemplate)
+        : subagentFirstPrompt(task.assignment, text.firstPrompt, {
+          request: scenario.prompt,
+          plan: await readFile(store.path('runs', result.runId, task.attempts[0].planRevision), 'utf8'),
+          handoverTemplate: text.handover,
+        });
+      assert.equal(content(messages[firstUser]), expectedPrompt);
       assert.equal(messages[firstUser + 1], seeds[0]);
       assert.equal(messages.filter(message => message.role === 'user' && content(message) === text.finalAnswer).length, reminderCount);
       if (text === orchestratorText) assert.ok(messages.some(message => message.role === 'user' &&

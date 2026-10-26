@@ -182,6 +182,27 @@ test('orchestrator request and plan markers expand literally in one pass', () =>
     '# Plan\n\n' + JSON.stringify({ request: 'Task' }, null, 2));
 });
 
+test('subagent markers expand assignment, request, plan and frozen handover literally', () => {
+  const assignment = 'Task $& {{ REQUEST }}';
+  const context = { request: 'Original {{ PLAN }}', plan: '# Plan\n{{ ASSIGNMENT }}',
+    handoverTemplate: '## Frozen handover\n{{ HANDOVER_TEMPLATE }} $1' };
+  const text = '{{ PLAN }}\n{{ ASSIGNMENT }}\n{{ REQUEST }}\n{{ HANDOVER_TEMPLATE }}\n{{ ASSIGNMENT }}';
+  assert.equal(subagentFirstPrompt(assignment, text, context),
+    `${context.plan}\n${assignment}\n${context.request}\n${context.handoverTemplate}\n${assignment}`);
+  const prompt = subagentFirstPrompt('Delegated task', undefined,
+    { request: 'Original request', plan: '# Saved plan' });
+  for (const value of ['Delegated task', 'Original request', '# Saved plan', subagentText.handover]) {
+    assert.ok(prompt.includes(value));
+  }
+  assert.ok(!/\{\{ (ASSIGNMENT|REQUEST|PLAN|HANDOVER_TEMPLATE) \}\}/.test(prompt));
+  assert.equal(subagentFirstPrompt('Task', '{{ HANDOVER_TEMPLATE }}', context),
+    context.handoverTemplate + '\n\n' + JSON.stringify({ assignment: 'Task' }, null, 2));
+  for (const name of ['REQUEST', 'PLAN']) {
+    assert.throws(() => subagentFirstPrompt('Task', `{{ ${name} }}`),
+      new RegExp(`Missing subagent prompt context: ${name}`));
+  }
+});
+
 test('named prompt slots preserve task data even with empty guidance', () => {
   for (const text of [orchestratorText, subagentText]) {
     for (const key of ['instructions', 'firstPrompt', 'firstReply', 'finalAnswer']) {

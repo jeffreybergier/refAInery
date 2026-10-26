@@ -117,7 +117,7 @@ not a validated live-model prompting strategy. Do not add inline behavioral pros
 | Slot | Role and timing |
 | --- | --- |
 | `instructions` | System-role guidance, composed with shared harness instructions and optional personality. |
-| `firstPrompt` | Initial user-role guidance. Orchestrator markers `{{ REQUEST }}` and `{{ PLAN_TEMPLATE }}` insert the request and plan format; subagent assignment data is appended as JSON. |
+| `firstPrompt` | Initial user-role guidance. Orchestrator markers: `{{ REQUEST }}`, `{{ PLAN_TEMPLATE }}`. Subagent markers: `{{ ASSIGNMENT }}`, `{{ REQUEST }}`, `{{ PLAN }}`, `{{ HANDOVER_TEMPLATE }}`. |
 | `firstReply` | Assistant-role history seeded once immediately after that initial user message, before the first model call. Blank means no seed. |
 | `finalAnswer` | User-role reminder after a successful text-only stop with no terminal workflow action. Blank disables it. |
 | `subagentReview` | Orchestrator-only user-role guidance after a handover, followed by attempt ID, stop reason, and handover as JSON. |
@@ -126,9 +126,12 @@ Orchestrator request and plan markers expand in one pass when building the initi
 message. Inserted request and plan content is not recursively substituted. The plan
 format comes from `planTemplate` at the top of `source/agents/orchestrator.ts` and is
 saved in the run snapshot. Without a request marker, request JSON is appended as a
-fallback, including for empty guidance. Assignment and handover data remain appended
-as JSON. Review prompts retain the explicit untrusted-content boundary for subagent
-handovers.
+fallback, including for empty guidance. Subagent markers likewise expand in one
+pass: the delegated assignment, original user request, saved plan at dispatch,
+and snapshotted handover format. Missing request or plan context for a referenced
+marker is an error. Without an assignment marker, assignment JSON is appended.
+These data markers are supported only in `firstPrompt`; handover review data
+remains appended as JSON with its explicit untrusted-content boundary.
 
 The first reply is a complete synthetic assistant message, not a partial-token
 prefill and not a user-role custom message. Pi persists it in JSONL and exports.

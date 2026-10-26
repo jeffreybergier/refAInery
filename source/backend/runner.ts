@@ -84,7 +84,10 @@ export async function runOnce(options: RunOptions) {
       engine.state.phase = "executing";
       await engine.save(); // Dispatch intent saved before calling Pi.
       stage("worker-executing");
-      await worker.prompt(subagentFirstPrompt(assignment, config.agentText.subagent.firstPrompt));
+      const plan = await safeRead(store.root, `${engine.prefix}/${engine.state.plan!}`);
+      await worker.prompt(subagentFirstPrompt(assignment, config.agentText.subagent.firstPrompt, {
+        request: request.prompt, plan, handoverTemplate: config.agentText.subagent.handover,
+      }));
       let attempt = engine.state.tasks.at(-1)!.attempts.at(-1)!;
       attempt.endedAt = now();
       if (!attempt.handover) throw new Error("Worker stopped without a handover");

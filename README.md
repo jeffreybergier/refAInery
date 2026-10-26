@@ -118,6 +118,14 @@ request/template text stay literal. If `{{ REQUEST }}` is omitted, request JSON 
 still appended so blank or older templates cannot lose the task. The plan template
 is retained in each run's agent-text snapshot.
 
+The subagent's `firstPrompt` supports `{{ ASSIGNMENT }}` (the orchestrator's
+delegated task), `{{ REQUEST }}` (the original user request), `{{ PLAN }}` (the
+saved plan at dispatch), and `{{ HANDOVER_TEMPLATE }}` (the snapshotted
+`subagentText.handover` format). These also expand in one pass. Without an
+assignment marker, assignment JSON is appended as a fallback. These data markers
+are supported in `firstPrompt`, not in other prompt slots. The handover format
+also remains in the subagent's system instructions.
+
 Config files `agents/orchestrator.json` and `agents/worker.json` are optional
 personality overlays, not replacements for those contracts. Their optional
 `prompts` object uses the same slot names. Each addition is inserted at
