@@ -1,4 +1,4 @@
-import { composePrompt, promptWithContext, sharedText } from "./shared.ts";
+import { composePrompt, promptWithContext, workflowMessages } from "./shared.ts";
 
 // AGENT INSTRUCTION: All prompts, guidance, and the plan template in this file
 // are user-authored. Never edit them without the user's explicit permission,
@@ -113,7 +113,7 @@ export function firstPrompt(request: string,
 }
 export function subagentReview(attempt: { id: string; stopReason: string | null }, handover: string,
   text = composePrompt(orchestratorText.subagentReview)): string {
-  return promptWithContext([text, sharedText.untrustedHandover].filter((part) => part.trim()).join("\n\n"), {
+  return promptWithContext([text, workflowMessages.untrustedHandover].filter((part) => part.trim()).join("\n\n"), {
     attemptId: attempt.id, stopReason: attempt.stopReason, handover,
   });
 }

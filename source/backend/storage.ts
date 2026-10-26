@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 
 export const now = () => new Date().toISOString();
 export const identity = (prefix: string) => `${prefix}-${randomUUID()}`;
+export const requestIdentity = () => `request-${randomUUID().slice(0, 13)}`;
+/** Local IDs are scoped to their parent, not globally unique. */
+export const localIdentity = (prefix: string, n: number) => `${prefix}-${String(n).padStart(3, "0")}`;
 export const numbered = (n: number) => String(n).padStart(6, "0");
 export function requireText(value: unknown, max = 65536): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new Error("Invalid text");

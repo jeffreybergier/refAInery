@@ -33,11 +33,22 @@ assert.equal(data.registry.provider, 'faux');
 assert.equal(data.registry.nextAttemptAt, null);
 const run = data.runs[0];
 assert.equal(run.checkpoints.at(-1).status, 'completed');
-assert.equal(await readFile(store.path('runs', result.runId, 'workspace/hello.txt'), 'utf8'), 'Hello from refAInery.\n');
+assert.match(result.requestId, /^request-[0-9a-f]{8}-[0-9a-f]{4}$/);
+const workspace = store.path('workspaces', result.requestId);
+assert.equal(await readFile(join(workspace, 'hello.txt'), 'utf8'), 'Hello from refAInery.\n');
+for (const personality of run.checkpoints.at(-1).configuration.personalities) {
+  assert.ok(personality.instructions.includes(`Workspace: /workspace/${result.requestId}`));
+}
+const sandbox = JSON.parse(await readFile(store.path('runs', result.runId, 'sandbox.json'), 'utf8'));
+assert.equal(sandbox.workspace, workspace);
+assert.equal(sandbox.workerWorkspace, `/workspace/${result.requestId}`);
 const sessions = await readdir(store.path('runs', result.runId, 'sessions'));
 assert.equal(sessions.length, 2);
 const entries = (await Promise.all(sessions.map(file => readFile(store.path('runs', result.runId, 'sessions', file), 'utf8'))))
   .flatMap(text => text.trim().split('\n').map(line => JSON.parse(line)));
+const sessionHeaders = entries.filter(e => e.type === 'session');
+assert.equal(sessionHeaders.length, 2);
+assert.ok(sessionHeaders.every(e => e.cwd === workspace));
 const tools = entries.filter(e => e.type === 'message' && e.message.role === 'toolResult');
 for (const name of ['update_plan', 'spawn_subagent', 'write', 'read', 'edit', 'bash', 'finish_task', 'finish_request']) {
   assert.ok(tools.some(e => e.message.toolName === name && !e.message.isError), name);
@@ -120,12 +131,14 @@ for (const withPlan of [false, true]) {
   const workerSteps = [
     assign('Create the artifact'),
     { agent: 'worker', tool: 'write', arguments: { path: 'shared.txt', content: 'Verified artifact\n' } },
-    { agent: 'worker', tool: 'bash', arguments: { command: 'touch /tmp/previous-worker' } },
+    { agent: 'worker', tool: 'bash', arguments: {
+      command: 'case "$PWD" in /workspace/request-????????-????) ;; *) exit 1;; esac; pwd > cwd.txt; touch /tmp/previous-worker',
+    } },
     handback('Created shared.txt.'),
     assign('Verify the artifact'),
     { agent: 'worker', tool: 'read', arguments: { path: 'shared.txt' } },
     { agent: 'worker', tool: 'bash', arguments: {
-      command: 'test ! -e /tmp/previous-worker && test "$(cat shared.txt)" = "Verified artifact"',
+      command: 'test ! -e /tmp/previous-worker && test "$(cat shared.txt)" = "Verified artifact" && test "$(cat cwd.txt)" = "$PWD"',
     } },
     handback('Verified persisted contents in a fresh sandbox.'),
     assign('Review the verification findings'),
@@ -149,6 +162,9 @@ for (const withPlan of [false, true]) {
   assert.equal(new Set(attempts.map(a => a.sessionId)).size, 3);
   assert.equal(new Set(attempts.map(a => a.export.path)).size, 3);
   for (const [index, attempt] of attempts.entries()) {
+    const taskId = `task-${String(index + 1).padStart(3, '0')}`;
+    assert.equal(state.tasks[index].id, taskId);
+    assert.equal(attempt.id, `${taskId}-attempt-001`);
     assert.equal(attempt.planRevision, state.plan);
     assert.equal(attempt.review, 'decided');
     assert.equal(attempt.export.state, 'saved');

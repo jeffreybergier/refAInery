@@ -320,7 +320,8 @@ test('SDK integration explicitly registers workflow tools without ambient defaul
       assistantMessage: { content: [toolCall, { type: 'toolCall', id: 'plan', name: 'update_plan', arguments: {} }] },
     });
     assert.equal(blocked.block, true);
-    assert.match(blocked.reason, /called alone/);
+    const { workflowMessages } = await import('../source/agents/shared.ts');
+    assert.equal(blocked.reason, workflowMessages.terminalCallRequired);
   }
   await assert.rejects(agent.session.agent.streamFunction(agent.session.model,{messages:[]}),/budget/);
   assert.deepEqual(await names(store.path(flow.prefix,'inferences')),[]);

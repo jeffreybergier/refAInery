@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Store, now, identity, numbered, requireText, readJSON, names, safeRead } from "./storage.ts";
+import { Store, now, identity, requestIdentity, localIdentity, numbered, requireText, readJSON, names, safeRead } from "./storage.ts";
 import type { Configuration } from "./config.ts";
 import { validateCheckpoint, validateRequest } from "./validation.ts";
 
@@ -119,7 +119,7 @@ export class Workflow {
         if (name === "spawn_subagent") {
           if (args.personality !== "worker" || args.model !== "default") throw new Error("Selection outside frozen allowlist");
           const title = requireText(args.title, 512), assignment = requireText(args.assignment);
-          this.state.tasks.push({ id: identity("task"), title, model: "default", assignment, attempts: [] });
+          this.state.tasks.push({ id: localIdentity("task", this.state.tasks.length + 1), title, model: "default", assignment, attempts: [] });
           this.state.pendingAction = { kind: "assign" };
         } else {
           if (!["success", "failure", "question"].includes(String(args.outcome))) throw new Error("Invalid outcome");
@@ -148,7 +148,7 @@ export class Workflow {
 }
 
 export async function enqueue(store: Store, prompt: string): Promise<RequestRecord> {
-  const request: RequestRecord = { schemaVersion: 1, id: identity("request"), prompt: requireText(prompt), receivedAt: now(), source: "manual" };
+  const request: RequestRecord = { schemaVersion: 1, id: requestIdentity(), prompt: requireText(prompt), receivedAt: now(), source: "manual" };
   validateRequest(request);
   await store.save(`requests/${request.id}.json`, request);
   return request;

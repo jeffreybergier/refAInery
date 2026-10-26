@@ -2,7 +2,7 @@ import { readFile, lstat, realpath, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { orchestrator, orchestratorText } from "../agents/orchestrator.ts";
 import { subagent, subagentText, instructionsPrompt } from "../agents/subagent.ts";
-import { sharedText, systemPrompt, resolveAgentText, type PersonalityPrompts } from "../agents/shared.ts";
+import { instructions, workflowMessages, systemPrompt, resolveAgentText, type PersonalityPrompts } from "../agents/shared.ts";
 import { createHash } from "node:crypto";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { safeRead } from "./storage.ts";
@@ -30,7 +30,7 @@ export async function loadConfiguration(root: string) {
   }
   // A dangling link or unreadable directory is an error, not missing config.
   const agentFiles = hasAgents ? await readdir(join(root, "agents")) : [];
-  const agentTemplates = structuredClone({ shared: sharedText, orchestrator: orchestratorText, subagent: subagentText });
+  const agentTemplates = structuredClone({ shared: { instructions, ...workflowMessages }, orchestrator: orchestratorText, subagent: subagentText });
   const agentText = structuredClone(agentTemplates);
   const personalities: Personality[] = [];
   for (const base of [orchestrator, subagent]) {

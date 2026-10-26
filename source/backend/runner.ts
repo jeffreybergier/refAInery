@@ -1,12 +1,13 @@
-import { Store, identity, now, safeRead, readJSON } from "./storage.ts";
+import { Store, identity, localIdentity, now, safeRead, readJSON } from "./storage.ts";
 import { loadConfiguration } from "./config.ts";
 import { Registry } from "./registry.ts";
 import { Workflow, enqueue, queuedRequests, notDue, type Checkpoint } from "./workflow.ts";
 import { PiAdapter, exportSession } from "./pi.ts";
-import { Sandbox } from "./sandbox.ts";
+import { Sandbox, createWorkspace } from "./sandbox.ts";
 import { ScriptedResponses, type Scenario } from "./scenario.ts";
 import { firstPrompt as orchestratorFirstPrompt, subagentReview } from "../agents/orchestrator.ts";
 import { firstPrompt as subagentFirstPrompt } from "../agents/subagent.ts";
+import { workspaceInstructions } from "../agents/shared.ts";
 
 export interface RunOptions {
   storage: string; config: string; prompt: string; selectedModel: string;
@@ -45,6 +46,11 @@ export async function runOnce(options: RunOptions) {
     const selected = registry.current.models.find((m) => m.id === options.selectedModel);
     if (!selected || selected.context_length < 250000) throw new Error("Selected model capacity unavailable");
     const request = await enqueue(store, options.prompt);
+    const workspace = store.path("workspaces", request.id);
+    await createWorkspace(workspace);
+    for (const personality of config.personalities) {
+      personality.instructions += `\n\n${workspaceInstructions(`/workspace/${request.id}`)}`;
+    }
     engine = new Workflow(store, request, { ...config, id: identity("config"),
       models: [{ id: "default", provider: scripted ? "faux" : "openrouter", modelId: options.selectedModel, contextWindow: 250000 }], orchestratorModel: "default" });
     await engine.save();
@@ -52,10 +58,10 @@ export async function runOnce(options: RunOptions) {
       await store.document(`${engine.prefix}/config/extensions/${extension.name}.ts`, extension.code);
     }
     await store.save(`${engine.prefix}/config/frozen.json`, engine.state.configuration);
-    sandbox = new Sandbox(`refainery-${engine.state.runId}`, store.path(engine.prefix, "workspace"));
+    sandbox = new Sandbox(`refainery-${engine.state.runId}`, workspace);
     stage("starting-isolated-workspace");
     const sandboxImage = await sandbox.start();
-    await store.save(`${engine.prefix}/sandbox.json`, { image: sandboxImage, name: sandbox.name, network: "none", hostMount: "workspace-only" });
+    await store.save(`${engine.prefix}/sandbox.json`, { image: sandboxImage, name: sandbox.name, network: "none", hostMount: "workspace-only", workspace: sandbox.workspace, workerWorkspace: sandbox.workerWorkspace });
     const adapter = new PiAdapter(store, engine, registry, options.selectedModel, options.apiKey, sandbox,
       12, 217232, scripted);
     await adapter.initialize();
@@ -78,7 +84,9 @@ export async function runOnce(options: RunOptions) {
       worker = await adapter.create(config.personalities.find((p) => p.role === "subagent")!);
       const task = engine.state.tasks.at(-1)!;
       const assignment = task.assignment;
-      task.attempts.push({ id: identity("attempt"), title: task.title, number: 1, model: "default", personality: "worker",
+      const attemptNumber = task.attempts.length + 1;
+      // Qualify the local attempt ID: decisions, handovers and exports are run-wide.
+      task.attempts.push({ id: `${task.id}-${localIdentity("attempt", attemptNumber)}`, title: task.title, number: attemptNumber, model: "default", personality: "worker",
         sessionId: worker.sessionId, sessionPath: worker.path, status: "running", startedAt: now(), endedAt: null,
         handover: null, export: notDue(), stopReason: null, review: "not-submitted", reviewedAt: null,
         retryReason: null, planRevision: engine.state.plan });

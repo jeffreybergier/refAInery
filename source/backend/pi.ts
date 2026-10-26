@@ -14,7 +14,7 @@ import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { ScriptedResponses } from "./scenario.ts";
 import { subagentText } from "../agents/subagent.ts";
 import { orchestratorText } from "../agents/orchestrator.ts";
-import { sharedText, resolveAgentText } from "../agents/shared.ts";
+import { workflowMessages, resolveAgentText } from "../agents/shared.ts";
 
 type Raw = Record<string, unknown>;
 export interface Inference {
@@ -128,7 +128,7 @@ export class PiAdapter {
         workflow.createWorkflowExtension(Type, personality.availableTools,
           async (callId: string, name: string, args: Raw) => {
             if (this.fatal) throw new Error("Run halted");
-            if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error(sharedText.contextStopReasonRequired);
+            if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error(workflowMessages.contextStopReasonRequired);
             return this.workflow.action(personality.role, sessionId, callId, name, args);
           }),
         (pi: ExtensionAPI) => { pi.on("session_before_compact", () => ({ cancel: true })); },
@@ -180,9 +180,9 @@ export class PiAdapter {
       const terminal = ["spawn_subagent", "finish_task", "finish_request"];
       const calls = context.assistantMessage.content.filter((c) => c.type === "toolCall");
       if (calls.some((c) => terminal.includes(c.name)) && calls.length !== 1) {
-        return { block: true, reason: sharedText.terminalCallRequired };
+        return { block: true, reason: workflowMessages.terminalCallRequired };
       }
-      if (contextHandback && context.toolCall.name !== "finish_task") return { block: true, reason: sharedText.handbackRequired };
+      if (contextHandback && context.toolCall.name !== "finish_task") return { block: true, reason: workflowMessages.handbackRequired };
       return oldBefore?.(context, signal);
     };
     let current: Inference | null = null;

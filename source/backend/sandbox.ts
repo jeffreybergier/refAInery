@@ -1,7 +1,13 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
-import { relative, join } from "node:path";
+import { relative, join, dirname, basename } from "node:path";
 import { createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition, createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+
+/** Allocate once per request. Existing directories fail rather than being reused. */
+export async function createWorkspace(workspace: string) {
+  await mkdir(dirname(workspace), { recursive: true });
+  await mkdir(workspace, { mode: 0o777 });
+}
 
 /** No shell on the host, credentials in the child environment, or agent-chosen Docker flags. */
 async function docker(args: string[], input = "", timeout = 45000): Promise<{ text: string; code: number }> {
@@ -31,13 +37,13 @@ const fileScript = `
 const fs = require('node:fs/promises'), p = require('node:path');
 (async () => {
   let data = ''; for await (const chunk of process.stdin) data += chunk;
-  const {op, path, content} = JSON.parse(data);
-  const full = p.resolve('/workspace', path);
-  if (full !== '/workspace' && !full.startsWith('/workspace/')) throw Error('outside workspace');
+  const {op, path, content, workspace} = JSON.parse(data);
+  const full = p.resolve(workspace, path);
+  if (full !== workspace && !full.startsWith(workspace + '/')) throw Error('outside workspace');
   let ancestor = full;
   while (true) {
     try { const real = await fs.realpath(ancestor);
-      if (real !== '/workspace' && !real.startsWith('/workspace/')) throw Error('outside workspace'); break;
+      if (real !== workspace && !real.startsWith(workspace + '/')) throw Error('outside workspace'); break;
     } catch (e) { if (e.code !== 'ENOENT') throw e; ancestor = p.dirname(ancestor); }
   }
   if (op === 'read') process.stdout.write((await fs.readFile(full)).toString('base64'));
@@ -53,13 +59,14 @@ export class Sandbox {
   private imageId?: string;
   readonly name: string;
   readonly workspace: string;
+  readonly workerWorkspace: string;
   readonly image: string;
   constructor(name: string, workspace: string,
     image = "ghcr.io/jeffreybergier/altivec-intelligence:latest") {
     this.name = name; this.workspace = workspace; this.image = image;
+    this.workerWorkspace = `/workspace/${basename(workspace)}`;
   }
   async start() {
-    await mkdir(this.workspace, { recursive: true, mode: 0o777 });
     const { chmod } = await import("node:fs/promises");
     await chmod(this.workspace, 0o777);
     if (!this.imageId) {
@@ -76,7 +83,7 @@ export class Sandbox {
     const result = await docker(["run", "-d", "--name", this.name, "--network", "none", "--read-only",
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "64",
       "--memory", "512m", "--cpus", "1", "--user", "65534:65534", "--tmpfs", "/tmp:rw,size=64m",
-      "--mount", `type=bind,source=${hostWorkspace},target=/workspace`, "-w", "/workspace",
+      "--mount", `type=bind,source=${hostWorkspace},target=${this.workerWorkspace}`, "-w", this.workerWorkspace,
       "--entrypoint", "node", imageId, "-e", "setInterval(() => {}, 1000)"]);
     if (result.code) throw new Error("Could not start isolated sandbox");
     this.started = true;
@@ -93,8 +100,8 @@ export class Sandbox {
     // Pi resolves relative tool paths against the session's controller cwd.
     // Translate that same workspace into the worker's mount namespace.
     const workerPath = path === this.workspace || path.startsWith(this.workspace + "/")
-      ? join("/workspace", relative(this.workspace, path)) : path;
-    const result = await docker(["exec", "-i", this.name, "node", "-e", fileScript], JSON.stringify({ op, path: workerPath, content }));
+      ? join(this.workerWorkspace, relative(this.workspace, path)) : path;
+    const result = await docker(["exec", "-i", this.name, "node", "-e", fileScript], JSON.stringify({ op, path: workerPath, content, workspace: this.workerWorkspace }));
     if (result.code) throw new Error(`Sandbox file operation failed: ${result.text}`);
     return result.text;
   }
@@ -104,10 +111,10 @@ export class Sandbox {
     const writeFile = async (path: string, content: string) => { await this.file("write", path, content); };
     const mkdir = async (path: string) => { await this.file("mkdir", path); };
     return [
-      createReadToolDefinition("/workspace", { operations: { access, readFile, detectImageMimeType: async () => null } }),
-      createWriteToolDefinition("/workspace", { operations: { writeFile, mkdir } }),
-      createEditToolDefinition("/workspace", { operations: { access, readFile, writeFile } }),
-      createBashToolDefinition("/workspace", { exposeSessionEnvironment: false, operations: {
+      createReadToolDefinition(this.workerWorkspace, { operations: { access, readFile, detectImageMimeType: async () => null } }),
+      createWriteToolDefinition(this.workerWorkspace, { operations: { writeFile, mkdir } }),
+      createEditToolDefinition(this.workerWorkspace, { operations: { access, readFile, writeFile } }),
+      createBashToolDefinition(this.workerWorkspace, { exposeSessionEnvironment: false, operations: {
         exec: async (command, _cwd, options) => {
           if (options.signal?.aborted || !this.started) throw new Error("Sandbox stopped");
           const seconds = Math.max(1, Math.min(options.timeout ?? 20, 30));

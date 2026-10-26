@@ -66,7 +66,7 @@ python3 refinery.py test run --scenario provider-error
 python3 refinery.py test reset
 ```
 
-`reset` explicitly removes generated test requests, runs, registry data and writer
+`reset` explicitly removes generated test requests, runs, workspaces, registry data and writer
 lock. Stop test work before resetting. It retains checked-in fixtures and never
 operates on production. Nothing is reset at startup.
 
@@ -100,7 +100,8 @@ the scripted provider understand or dynamically solve that request.
 ## Agent roles and personalities
 
 The harness owns the fundamental orchestrator and subagent contracts. Review
-instructions and prompts in the marked top sections of `source/agents/shared.ts`,
+instructions and prompts in the marked top sections of `source/agents/shared.ts`
+(`instructions` and `workflowMessages`),
 `orchestrator.ts`, and `subagent.ts`; workflow descriptions have an equivalent
 section in `source/extensions/workflow.ts`. Workflow state and persistence logic
 live in `source/backend/workflow.ts`.
@@ -167,7 +168,20 @@ credential/mount enforcement. It does not grant agents access to app checkouts.
 The workflow is still supervised and single-request. Existing limits and
 recovery behavior remain: twelve inference calls across all sessions, no automatic
 queue draining or replay. Multiple worker assignments are supported sequentially;
-each gets a fresh sandbox using the same workspace and pinned image. Plans are
+each gets a fresh sandbox using the same workspace and pinned image.
+
+New request IDs use the first two UUID sections, e.g. `request-550e8400-e29b`.
+Their shared working directory is `workspaces/<request-id>` under storage,
+passed to Pi as its controller-side cwd and mounted alone at
+`/workspace/<request-id>` in the worker. The agent instructions name that worker
+path. Workspace allocation fails if the directory already exists; there is no
+collision search or retry. Tasks are numbered within the run (`task-001`), and
+attempts within each task (`attempt-001`). Stored attempt references include the
+task prefix (`task-001-attempt-001`) to keep handovers, exports and review
+references unambiguous. Run/session IDs remain unchanged, and historical records
+are not renamed or moved.
+
+Plans are
 optional, may be reused across turns, and are not prerequisites for assignment or
 completion. Success does not require a worker assignment. Handover templates are
 prompt guidance, not a required heading checklist enforced by the backend.
