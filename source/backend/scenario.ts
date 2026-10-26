@@ -4,7 +4,7 @@ import type { FauxProviderHandle } from "@earendil-works/pi-ai/providers/faux";
 import { readJSON } from "./storage.ts";
 
 export interface ScenarioStep {
-  agent: "orchestrator" | "worker";
+  agent: string;
   text?: string;
   tool?: string;
   arguments?: ToolCall["arguments"];
@@ -18,7 +18,9 @@ export async function loadScenario(root: string, name: string): Promise<Scenario
     throw new Error("Invalid scenario");
   }
   for (const step of scenario.responses) {
-    if (!["orchestrator", "worker"].includes(step.agent) || (!step.text && !step.tool && !step.error)) {
+    if (typeof step.agent !== "string" || step.agent.length > 128 ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(step.agent) || /\s/.test(step.agent) ||
+        (!step.text && !step.tool && !step.error)) {
       throw new Error("Invalid scenario response");
     }
   }

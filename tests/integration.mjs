@@ -18,6 +18,11 @@ assert.ok(storage, 'check.sh supplies disposable storage');
 const config = '/app/config';
 const model = await modelConfiguration(config);
 const scenario = await loadScenario(config, 'happy-path');
+// Historical configs without a selection manifest still have a worker role.
+const legacyScenario = { ...scenario, responses: scenario.responses.map(step => ({
+  ...step, agent: step.agent === 'implementer' ? 'worker' : step.agent,
+  ...(step.tool === 'spawn_subagent' ? { arguments: { ...step.arguments, personality: 'worker' } } : {}),
+})) };
 const options = { storage, config, prompt: scenario.prompt, scenario,
   selectedModel: model.model, registryURL: join(config, model.registry), apiKey: '' };
 const result = await runOnce(options);
@@ -37,7 +42,7 @@ assert.match(result.requestId, /^request-[0-9a-f]{8}-[0-9a-f]{4}$/);
 const workspace = store.path('workspaces', result.requestId);
 assert.equal(await readFile(join(workspace, 'hello.txt'), 'utf8'), 'Hello from refAInery.\n');
 for (const personality of run.checkpoints.at(-1).configuration.personalities) {
-  assert.ok(personality.instructions.includes(`Workspace: /workspace/${result.requestId}`));
+  assert.ok(personality.instructions.includes(`/workspace/${result.requestId}`));
   assert.ok(!personality.instructions.includes('{{ CURRENT WORKING DIRECTORY }}'));
 }
 const sandbox = JSON.parse(await readFile(store.path('runs', result.runId, 'sandbox.json'), 'utf8'));
@@ -76,7 +81,7 @@ const defaultConfig = join(storage, 'default-config');
 const defaultStorage = join(storage, 'default-run');
 await mkdir(defaultConfig);
 await mkdir(defaultStorage);
-const defaultResult = await runOnce({ ...options, config: defaultConfig, storage: defaultStorage });
+const defaultResult = await runOnce({ ...options, config: defaultConfig, storage: defaultStorage, scenario: legacyScenario });
 assert.equal(defaultResult.outcome, 'completed');
 const defaults = (await loadProduction(new Store(defaultStorage))).runs[0].checkpoints.at(-1).configuration;
 assert.ok(defaults.agentText.subagent.contextHandback);
@@ -123,27 +128,27 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
 for (const withPlan of [false, true]) {
   const root = join(storage, withPlan ? 'reused-plan-workers' : 'no-plan-workers');
   await mkdir(root);
-  const assign = title => ({ agent: 'orchestrator', tool: 'spawn_subagent', arguments: {
-    personality: 'worker', model: 'default', title, assignment: title, rationale: 'Continue the work',
+  const assign = (personality, title) => ({ agent: 'orchestrator', tool: 'spawn_subagent', arguments: {
+    personality, model: 'default', title, assignment: title, rationale: 'Continue the work',
   } });
-  const handback = summary => ({ agent: 'worker', tool: 'finish_task', arguments: {
+  const handback = (agent, summary) => ({ agent, tool: 'finish_task', arguments: {
     markdown: summary, stopReason: 'success',
   } });
   const workerSteps = [
-    assign('Create the artifact'),
-    { agent: 'worker', tool: 'write', arguments: { path: 'shared.txt', content: 'Verified artifact\n' } },
-    { agent: 'worker', tool: 'bash', arguments: {
+    assign('implementer', 'Create the artifact'),
+    { agent: 'implementer', tool: 'write', arguments: { path: 'shared.txt', content: 'Verified artifact\n' } },
+    { agent: 'implementer', tool: 'bash', arguments: {
       command: 'case "$PWD" in /workspace/request-????????-????) ;; *) exit 1;; esac; pwd > cwd.txt; touch /tmp/previous-worker',
     } },
-    handback('Created shared.txt.'),
-    assign('Verify the artifact'),
-    { agent: 'worker', tool: 'read', arguments: { path: 'shared.txt' } },
-    { agent: 'worker', tool: 'bash', arguments: {
+    handback('implementer', 'Created shared.txt.'),
+    assign('tester', 'Verify the artifact'),
+    { agent: 'tester', tool: 'read', arguments: { path: 'shared.txt' } },
+    { agent: 'tester', tool: 'bash', arguments: {
       command: 'test ! -e /tmp/previous-worker && test "$(cat shared.txt)" = "Verified artifact" && test "$(cat cwd.txt)" = "$PWD"',
     } },
-    handback('Verified persisted contents in a fresh sandbox.'),
-    assign('Review the verification findings'),
-    handback('Reviewed the supplied findings.'),
+    handback('tester', 'Verified persisted contents in a fresh sandbox.'),
+    assign('implementer', 'Review the verification findings'),
+    handback('implementer', 'Reviewed the supplied findings.'),
     { agent: 'orchestrator', tool: 'finish_request', arguments: {
       outcome: 'success', summary: 'Artifact created and verified.', rationale: 'Reviewed the worker results.',
     } },
@@ -160,6 +165,9 @@ for (const withPlan of [false, true]) {
   assert.equal(state.decisions.length, 4);
   for (const decision of state.decisions) assert.equal(decision.plan, state.plan);
   const attempts = state.tasks.flatMap(task => task.attempts);
+  assert.deepEqual(state.configuration.subagentIds, ['implementer', 'tester']);
+  assert.deepEqual(state.tasks.map(task => task.personality), ['implementer', 'tester', 'implementer']);
+  assert.deepEqual(attempts.map(attempt => attempt.personality), ['implementer', 'tester', 'implementer']);
   assert.equal(new Set(attempts.map(a => a.sessionId)).size, 3);
   assert.equal(new Set(attempts.map(a => a.export.path)).size, 3);
   for (const [index, attempt] of attempts.entries()) {
@@ -175,11 +183,13 @@ for (const withPlan of [false, true]) {
     const firstUser = session.find(m => m.role === 'user');
     const text = typeof firstUser.content === 'string' ? firstUser.content
       : firstUser.content.filter(part => part.type === 'text').map(part => part.text).join('');
+    const personality = state.configuration.personalities.find(p => p.id === attempt.personality);
+    assert.ok(session.some(m => m.role === 'system' && JSON.stringify(m).includes(personality.personalityPrompts.instructions)));
     assert.equal(text, subagentFirstPrompt(state.tasks[index].assignment,
-      state.configuration.agentText.subagent.firstPrompt, {
+      personality.resolvedPrompts.firstPrompt, {
         request: scenario.prompt,
         plan: withPlan ? scenario.responses[0].arguments.markdown : '',
-        handoverTemplate: state.configuration.agentText.subagent.handover,
+        handoverTemplate: personality.resolvedPrompts.handover,
       }));
   }
   assert.equal(saved.documents.filter(d => d.kind === 'html').length, 4);
@@ -191,7 +201,7 @@ for (const withPlan of [false, true]) {
     const interruptedRoot = join(storage, 'second-worker-error');
     await mkdir(interruptedRoot);
     await assert.rejects(runOnce({ ...options, storage: interruptedRoot, scenario: { ...scenario,
-      responses: [...workerSteps.slice(0, 5), { agent: 'worker', error: 'Second worker failed' }],
+      responses: [...workerSteps.slice(0, 5), { agent: 'tester', error: 'Second worker failed' }],
     } }), /Milestone incomplete/);
     const interrupted = (await loadProduction(new Store(interruptedRoot))).runs[0].checkpoints.at(-1);
     assert.equal(interrupted.phase, 'recovery-required');
@@ -220,7 +230,7 @@ for (const withPlan of [false, true]) {
   for (const repair of [false, true]) {
     const root = join(storage, repair ? 'text-only-repair' : 'no-spurious-reminder');
     await mkdir(root);
-    const responses = scenario.responses.flatMap(step => repair &&
+    const responses = legacyScenario.responses.flatMap(step => repair &&
       ['spawn_subagent', 'finish_task', 'finish_request'].includes(step.tool)
       ? [{ agent: step.agent, text: 'A text-only final answer without the required tool.' }, step] : [step]);
     const result = await runOnce({ ...options, config: promptConfig, storage: root, scenario: { ...scenario, responses } });
@@ -265,7 +275,7 @@ for (const withPlan of [false, true]) {
   // Two text-only stops exhaust the single reminder; no implicit completion.
   for (const [name, responses] of [
     ['orchestrator-ignores-reminder', [{ agent: 'orchestrator', text: 'Done' }, { agent: 'orchestrator', text: 'Still done' }]],
-    ['worker-ignores-reminder', [...scenario.responses.slice(0, 2),
+    ['worker-ignores-reminder', [...legacyScenario.responses.slice(0, 2),
       { agent: 'worker', text: 'Done' }, { agent: 'worker', text: 'Still done' }]],
   ]) {
     const root = join(storage, name);

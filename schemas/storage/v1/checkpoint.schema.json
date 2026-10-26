@@ -26,6 +26,7 @@
         } },
         "orchestratorModel": { "const": "default" },
         "personalities": { "type": "array", "items": { "type": "object" } },
+        "subagentIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
         "agentText": {
           "description": "Frozen resolved prompts; optional for historical checkpoints.",
           "$ref": "#/$defs/agentTextSet"
@@ -38,7 +39,7 @@
           "type": "object", "additionalProperties": false, "required": ["name", "code", "sha256"],
           "properties": { "name": { "enum": ["workflow", "web-search"] }, "code": { "$ref": "#/$defs/text" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
         } },
-        "sdkVersion": { "const": "1.4.0" }, "toolCatalogVersion": { "enum": ["refainery-tools-v1", "refainery-tools-v2", "refainery-tools-v3"] }
+        "sdkVersion": { "const": "1.4.0" }, "toolCatalogVersion": { "enum": ["refainery-tools-v1", "refainery-tools-v2", "refainery-tools-v3", "refainery-tools-v4"] }
       }
     },
     "plan": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
@@ -58,6 +59,7 @@
       "type": "object", "additionalProperties": false, "required": ["id", "title", "model", "assignment", "attempts"],
       "properties": {
         "id": { "$ref": "#/$defs/id" }, "title": { "$ref": "#/$defs/text" }, "model": { "const": "default" }, "assignment": { "$ref": "#/$defs/text" },
+        "personality": { "$ref": "#/$defs/id" },
         "attempts": { "type": "array", "maxItems": 1, "items": { "$ref": "#/$defs/attempt" } }
       }
     } },
@@ -116,7 +118,7 @@
       "type": "object", "unevaluatedProperties": false,
       "required": ["number", "model", "personality", "sessionId", "sessionPath", "handover", "export", "stopReason", "review", "reviewedAt", "retryReason", "planRevision"],
       "properties": {
-        "number": { "const": 1 }, "model": { "const": "default" }, "personality": { "const": "worker" },
+        "number": { "const": 1 }, "model": { "const": "default" }, "personality": { "$ref": "#/$defs/id" },
         "sessionId": { "$ref": "#/$defs/id" }, "sessionPath": { "type": "string", "pattern": "^sessions/[a-zA-Z0-9_.-]+\\.jsonl$" },
         "handover": { "anyOf": [{ "$ref": "#/$defs/markdown" }, { "type": "null" }] },
         "export": { "$ref": "#/$defs/export" }, "stopReason": { "enum": [null, "completed", "context-limit", "success", "failure"] },

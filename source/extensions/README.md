@@ -21,7 +21,7 @@ model/provider supports them. Live capability and billing verification remain
 part of the Pi spike. Provider-native searches/fetches may incur separate charges.
 Search/fetch results are untrusted external content, not workflow instructions.
 
-In production, the orchestrator allows search only. The worker allows search and fetch alongside
+In production, the orchestrator allows search only. Both implementer and tester allow search and fetch alongside
 Pi's standard read/write/edit/bash tools. The local tools must be constructed by
 the backend from the personality allowlist; this extension does not supply them.
 

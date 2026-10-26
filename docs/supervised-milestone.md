@@ -36,8 +36,12 @@ exercise OpenRouter HTTP parsing or model reasoning. Faux usage is recorded as
 Personalities are loaded from the selected config directory. Executable
 extensions now live in `source/extensions/`, not in separate test/prod config.
 Their reviewed contents, hashes, SDK version and tool catalog version are frozen
-before each execution. The worker test personality omits native web capabilities;
-its script only calls local/workflow tools.
+before each execution. `subagents.json` selects exactly `implementer` and `tester`
+in both environments. The tool schema and backend enforce these choices; dispatch
+uses the selected personality's prompts and tools. Task/attempt records retain
+that selection. Test personalities omit native web capabilities; their scripts
+only call local/workflow tools. Old configurations without a selection manifest
+retain the legacy worker. See `schemas/config/v1/README.md` for the full contract.
 
 Existing resource limits remain: twelve inference requests across all sessions,
 2,048 output tokens per call, no provider/agent retries, and a three-minute

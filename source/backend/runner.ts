@@ -82,12 +82,15 @@ export async function runOnce(options: RunOptions) {
       if (engine.state.tasks.length > 1) await sandbox.start();
       engine.state.phase = "dispatching";
       await engine.save();
-      worker = await adapter.create(config.personalities.find((p) => p.role === "subagent")!);
       const task = engine.state.tasks.at(-1)!;
+      const personality = config.personalities.find((p) => p.role === "subagent" && p.id === task.personality);
+      if (!personality || !config.subagentIds.includes(personality.id)) throw new Error("Selection outside frozen allowlist");
+      worker = await adapter.create(personality);
+      const workerText = personality.resolvedPrompts!;
       const assignment = task.assignment;
       const attemptNumber = task.attempts.length + 1;
       // Qualify the local attempt ID: decisions, handovers and exports are run-wide.
-      task.attempts.push({ id: `${task.id}-${localIdentity("attempt", attemptNumber)}`, title: task.title, number: attemptNumber, model: "default", personality: "worker",
+      task.attempts.push({ id: `${task.id}-${localIdentity("attempt", attemptNumber)}`, title: task.title, number: attemptNumber, model: "default", personality: personality.id,
         sessionId: worker.sessionId, sessionPath: worker.path, status: "running", startedAt: now(), endedAt: null,
         handover: null, export: notDue(), stopReason: null, review: "not-submitted", reviewedAt: null,
         retryReason: null, planRevision: engine.state.plan });
@@ -97,8 +100,8 @@ export async function runOnce(options: RunOptions) {
       stage("worker-executing");
       const plan = engine.state.plan === null ? ""
         : await safeRead(store.root, `${engine.prefix}/${engine.state.plan}`);
-      await worker.prompt(subagentFirstPrompt(assignment, config.agentText.subagent.firstPrompt, {
-        request: request.prompt, plan, handoverTemplate: config.agentText.subagent.handover,
+      await worker.prompt(subagentFirstPrompt(assignment, workerText.firstPrompt, {
+        request: request.prompt, plan, handoverTemplate: workerText.handover,
       }));
       let attempt = engine.state.tasks.at(-1)!.attempts.at(-1)!;
       attempt.endedAt = now();

@@ -15,6 +15,31 @@ export function validateRequest(value: unknown): asserts value is RequestRecord 
 export function validateCheckpoint(value: unknown, previous?: Checkpoint): asserts value is Checkpoint {
   if (!checkpoint(value)) throw new Error("Invalid production checkpoint");
   const state = value;
+  const allowed = state.configuration.subagentIds;
+  if (state.configuration.toolCatalogVersion === "refainery-tools-v4" && !allowed) {
+    throw new Error("Missing frozen subagent allowlist");
+  }
+  if (allowed) {
+    const personalities = state.configuration.personalities;
+    const subagents = personalities.filter(p => p.role === "subagent");
+    if (new Set(personalities.map(p => p.id)).size !== personalities.length ||
+        personalities.filter(p => p.role === "orchestrator").length !== 1 ||
+        subagents.length !== allowed.length || allowed.includes("orchestrator") ||
+        allowed.some(id => !subagents.some(p => p.id === id))) {
+      throw new Error("Invalid frozen subagent allowlist");
+    }
+  }
+  for (const task of state.tasks) {
+    if (allowed ? !task.personality || !allowed.includes(task.personality)
+      : task.personality !== undefined && task.personality !== "worker") {
+      throw new Error("Task outside frozen subagent allowlist");
+    }
+    for (const attempt of task.attempts) {
+      if (attempt.personality !== (task.personality ?? "worker")) {
+        throw new Error("Attempt personality differs from task selection");
+      }
+    }
+  }
   const before = (a: string, b: string) => Date.parse(a) <= Date.parse(b);
   if (!before(state.startedAt, state.savedAt) ||
       (state.endedAt && !before(state.endedAt, state.savedAt)) ||
@@ -57,6 +82,10 @@ export function validateCheckpoint(value: unknown, previous?: Checkpoint): asser
         state.startedAt !== previous.startedAt || !before(previous.savedAt, state.savedAt) ||
         JSON.stringify(state.configuration) !== JSON.stringify(previous.configuration) ||
         (previous.phase === "ended" && (state.status !== previous.status || state.endedAt !== previous.endedAt))) throw new Error("Invalid checkpoint chain");
+    for (const old of previous.tasks) {
+      const current = state.tasks.find(task => task.id === old.id);
+      if (!current || current.personality !== old.personality) throw new Error("Changed task personality");
+    }
     const oldExecutions = [...previous.orchestrator.turns, ...previous.tasks.flatMap((t) => t.attempts)];
     for (const old of oldExecutions) {
       const current = executions.find((e) => e.id === old.id);

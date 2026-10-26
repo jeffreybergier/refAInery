@@ -10,12 +10,19 @@ import { PiAdapter, exportSession } from '../source/backend/pi.ts';
 import { Store, names } from '../source/backend/storage.ts';
 import { Workflow, enqueue } from '../source/backend/workflow.ts';
 
-async function setup(t, role, text, responses, maxCalls = 12) {
+async function setup(t, role, text, responses, maxCalls = 12, personalityId = null) {
   const root = await mkdtemp(join(tmpdir(), 'refainery-prompt-slots-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = new Store(root), config = await loadConfiguration(root);
   Object.assign(config.agentText[role], text);
   const personality = config.personalities.find(p => p.role === role);
+  if (personalityId) {
+    personality.id = personalityId;
+    personality.resolvedPrompts = { ...personality.resolvedPrompts, ...text };
+    config.subagentIds = [personalityId];
+    config.agentText.subagent = { ...config.agentText.subagent,
+      firstReply: 'Wrong role-wide seed', finalAnswer: 'Wrong role-wide reminder' };
+  }
   if (role === 'subagent') personality.availableTools = ['finish_task'];
   const flow = new Workflow(store, await enqueue(store, 'Prompt test'), {
     ...config, id: 'config-test', models: [{ id: 'default', provider: 'faux', modelId: 'test', contextWindow: 250000 }],
@@ -91,6 +98,22 @@ for (const role of ['orchestrator', 'subagent']) {
     const { agent, contexts } = await setup(t, role, { firstReply: '\n', finalAnswer: '\n' }, [{}]);
     await agent.prompt('Initial task');
     assert.equal(contexts.length, 1);
+  });
+}
+
+for (const id of ['implementer', 'tester']) {
+  test(`${id}: session uses personality-specific seed/reminder and inference identity`, async t => {
+    const firstReply = `${id} seed`, finalAnswer = `${id} reminder`;
+    const { agent, contexts, store, flow } = await setup(t, 'subagent',
+      { firstReply, finalAnswer }, [{}, {}], 12, id);
+    await agent.prompt('Task');
+    assert.equal(contexts.length, 2);
+    assert.ok(contexts[0].messages.some(m => m.role === 'assistant' && plainText(m) === firstReply));
+    assert.equal(plainText(contexts[1].messages.at(-1)), finalAnswer);
+    for (const file of await names(store.path(flow.prefix, 'inferences'))) {
+      const record = JSON.parse(await readFile(store.path(flow.prefix, 'inferences', file, '000002.json'), 'utf8'));
+      assert.equal(record.personalityId, id);
+    }
   });
 }
 

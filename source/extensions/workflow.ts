@@ -23,13 +23,14 @@ type Host = (callId: string, name: Action, args: Record<string, unknown>) => Pro
  */
 export function createWorkflowExtension(
   Type: typeof SchemaType, availableTools: readonly string[], host: Host,
+  subagentIds: readonly string[] = ["worker"],
 ): (pi: ExtensionAPI) => void {
   const text = () => Type.String({ minLength: 1, maxLength: 65536 });
   const definitions = [
     { name: "update_plan", description: workflowText.update_plan,
       parameters: Type.Object({ markdown: text() }, { additionalProperties: false }) },
     { name: "spawn_subagent", description: workflowText.spawn_subagent,
-      parameters: Type.Object({ personality: Type.Literal("worker"), model: Type.Literal("default"),
+      parameters: Type.Object({ personality: Type.Union(subagentIds.map((id) => Type.Literal(id))), model: Type.Literal("default"),
         title: text(), assignment: text(), rationale: text() }, { additionalProperties: false }) },
     { name: "finish_task", description: workflowText.finish_task,
       parameters: Type.Object({ markdown: text(), stopReason: Type.Union([

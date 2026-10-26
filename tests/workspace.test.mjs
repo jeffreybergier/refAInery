@@ -38,7 +38,7 @@ test('requests own separate workspaces, and existing workspaces fail closed', as
   assert.equal(sandbox.workspace, firstPath);
   assert.equal(sandbox.workerWorkspace, `/workspace/${first.id}`);
   const guidance = resolveWorkspaceInstructions(instructions, sandbox.workerWorkspace);
-  assert.ok(guidance.includes(`Workspace: ${sandbox.workerWorkspace}`));
+  assert.ok(guidance.includes(sandbox.workerWorkspace));
   assert.ok(!guidance.includes('{{ CURRENT WORKING DIRECTORY }}'));
 });
 

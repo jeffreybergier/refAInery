@@ -21,7 +21,7 @@ export interface Checkpoint {
   configuration: Configuration & { id: string; models: { id: string; provider: string; modelId: string; contextWindow: number }[]; orchestratorModel: string };
   plan: string | null; plans: { path: string; turnId: string; at: string }[];
   orchestrator: { sessionId: string; sessionPath: string; export: ExportState; turns: Execution[] };
-  tasks: { id: string; title: string; model: string; assignment: string; attempts: Attempt[] }[];
+  tasks: { id: string; title: string; model: string; personality?: string; assignment: string; attempts: Attempt[] }[];
   decisions: { attemptId: string | null; at: string; action: string; summary: string; plan: string | null }[];
   receipts: Record<string, { action: string; argsHash: string; result: unknown }>;
   pendingAction: { kind: "assign" | "finish"; outcome?: string; summary?: string } | null;
@@ -117,9 +117,11 @@ export class Workflow {
         const last = this.state.tasks.at(-1)?.attempts.at(-1);
         if (last && (last.export.state !== "saved" || !last.endedAt)) throw new Error("Handback is not durable");
         if (name === "spawn_subagent") {
-          if (args.personality !== "worker" || args.model !== "default") throw new Error("Selection outside frozen allowlist");
+          const allowed = this.state.configuration.subagentIds ?? ["worker"];
+          if (typeof args.personality !== "string" || !allowed.includes(args.personality) ||
+              args.model !== "default") throw new Error("Selection outside frozen allowlist");
           const title = requireText(args.title, 512), assignment = requireText(args.assignment);
-          this.state.tasks.push({ id: localIdentity("task", this.state.tasks.length + 1), title, model: "default", assignment, attempts: [] });
+          this.state.tasks.push({ id: localIdentity("task", this.state.tasks.length + 1), title, model: "default", personality: args.personality, assignment, attempts: [] });
           this.state.pendingAction = { kind: "assign" };
         } else {
           if (!["success", "failure", "question"].includes(String(args.outcome))) throw new Error("Invalid outcome");

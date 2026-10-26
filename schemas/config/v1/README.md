@@ -1,11 +1,24 @@
 # Configuration v1: optional agent personalities
 
 The harness owns two role definitions in `source/agents/orchestrator.ts` and
-`source/agents/subagent.ts`. Configuration supplies optional personality overlays
-at `refAInery-config/<test|prod>/agents/orchestrator.json` and `agents/worker.json`.
-Either or both files (or the agents directory) may be absent. Missing files use
-built-in roles; malformed files, mismatched IDs/roles, and unreadable files fail
-validation. The configuration root itself must exist.
+`source/agents/subagent.ts`. Each environment's `subagents.json` explicitly
+selects the subagent personalities available to the orchestrator:
+
+```json
+{"schemaVersion": 1, "allowed": ["implementer", "tester"]}
+```
+
+`subagents.schema.json` validates this manifest. The list must be nonempty, have
+unique valid IDs, and exclude `orchestrator`. Each listed `agents/<id>.json` must
+exist, match its basename, and have role `subagent`. Missing, malformed,
+unreadable, or escaping-symlink selections fail before execution; there is no
+fallback for invalid selections. Unlisted files are ignored, not discovered as
+additional runtime choices. Both test and production select implementer/tester.
+
+`agents/orchestrator.json` is an optional overlay. For backward compatibility,
+when the manifest is absent, only `worker` is selected and `agents/worker.json`
+is optional. With neither overlay, built-in roles are used. The configuration
+root itself must exist. Historical saved runs are not reloaded from these files.
 
 ```json
 {
@@ -24,8 +37,8 @@ Only `schemaVersion`, `id`, `name`, and `role` are required when a file is
 present. The `prompts` object and every field inside it are optional. Unknown
 fields are rejected, and names must be nonblank. IDs are case-sensitive,
 1–128 ASCII letters/digits/underscores/hyphens, starting with a letter or digit.
-The current sequential-worker runner accepts only the two filenames/roles above;
-this is not yet a catalog of dynamically selectable personalities.
+The runner selects by the requested personality ID, not by the first matching
+role. Each personality independently resolves its prompts and tool permissions.
 
 Personality additions supplement, never replace, the role contract. They describe
 tone, expertise, and working preferences, not the workflow protocol. Model
@@ -87,6 +100,15 @@ configurations may also explicitly select the role-authorized `web_search`
 capability, plus `web_fetch` for subagents. Web capabilities are not enabled by
 default, so built-in roles also work with the offline scripted provider.
 Unsupported transport/capability combinations still fail session creation.
+
+The frozen `subagentIds` list drives both the `spawn_subagent` personality enum
+and backend membership validation. A valid tool call cannot select `worker`, the
+orchestrator, or an unlisted personality when the list is implementer/tester.
+Tasks retain their selected personality before dispatch; attempts must match it.
+Configuration changes affect future runs only. Selection restricts available
+types, not scheduling: the orchestrator need not use both or run a tester before
+completion. Tester guidance is not a read-only permission boundary, particularly
+when `bash` is enabled.
 
 The JSON Schema validates structure; the loader enforces role policy. Neither
 personality text nor prompt precedence is a security boundary. Tool permissions,
@@ -153,8 +175,11 @@ Context-limit handback retains its separate, stricter path.
 
 Each new run freezes the fully composed system instructions, original optional
 additions (`personalities[].personalityPrompts`), original harness templates
-(`agentTemplates`), resolved text (`agentText`), tools, and extension source/hashes.
-The runner and session adapter use the resolved text; they do not re-expand it
+(`agentTemplates`), role text (`agentText`), per-personality resolved text
+(`personalities[].resolvedPrompts`), the selected IDs (`subagentIds`), tools, and
+extension source/hashes. Per-personality text takes precedence over the legacy
+role-wide text for session creation and task prompts. The runner and session
+adapter use the resolved text; they do not re-expand it
 or reread personality files during the run. Old checkpoints without these fields
 remain readable. Changing either repository does not rewrite earlier snapshots.
 Automatic replay or recovery remains unsupported.

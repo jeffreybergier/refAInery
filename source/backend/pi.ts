@@ -97,11 +97,13 @@ export class PiAdapter {
     this.apiKey = "";
   }
   async create(personality: Personality) {
-    const text = this.workflow.state.configuration.agentText?.[personality.role]
+    const text = personality.resolvedPrompts
+      ?? this.workflow.state.configuration.agentText?.[personality.role]
       ?? resolveAgentText(personality.role === "orchestrator" ? orchestratorText : subagentText);
     const firstReply = text.firstReply;
     const finalAnswer = text.finalAnswer;
-    const contextHandbackPrompt = this.workflow.state.configuration.agentText?.subagent.contextHandback
+    const contextHandbackPrompt = personality.resolvedPrompts?.contextHandback
+      ?? this.workflow.state.configuration.agentText?.subagent.contextHandback
       ?? subagentText.contextHandback;
     const runRoot = this.store.path(this.workflow.prefix);
     const agentDir = this.store.path(this.workflow.prefix, "pi-private", personality.id);
@@ -130,7 +132,7 @@ export class PiAdapter {
             if (this.fatal) throw new Error("Run halted");
             if (contextHandback && name === "finish_task" && args.stopReason !== "context-limit") throw new Error(workflowMessages.contextStopReasonRequired);
             return this.workflow.action(personality.role, sessionId, callId, name, args);
-          }),
+          }, this.workflow.state.configuration.subagentIds),
         (pi: ExtensionAPI) => { pi.on("session_before_compact", () => ({ cancel: true })); },
       ],
     });

@@ -129,17 +129,36 @@ subagent `instructions`: it places the format inline without appending a duplica
 If that marker is absent, the format is appended to the system instructions as
 before. Inserted template content remains literal.
 
-Config files `agents/orchestrator.json` and `agents/worker.json` are optional
-personality overlays, not replacements for those contracts. Their optional
+Config files `agents/orchestrator.json` and `agents/<id>.json` are personality
+overlays, not replacements for those contracts. Both environment configurations
+select exactly two subagent personalities in `subagents.json`:
+
+```json
+{"schemaVersion": 1, "allowed": ["implementer", "tester"]}
+```
+
+`agents/implementer.json` describes implementation work; `agents/tester.json`
+describes independent verification. Both retain the harness `subagent` role.
+The orchestrator's tool schema and backend enforce this frozen allowlist;
+unlisted files cannot add choices. Listed files must exist and match their IDs
+and role. Each selected personality has its own resolved prompts and tools.
+Selection is persisted on tasks and attempts. This does not require either type
+to be used or impose a mandatory test gate; tester instructions are not read-only
+sandbox enforcement.
+
+The orchestrator overlay remains optional. For legacy configurations only,
+omitting `subagents.json` retains the built-in `worker` and optional
+`agents/worker.json` overlay. An invalid manifest never falls back to that mode. Their optional
 `prompts` object uses the same slot names. Each addition is inserted at
 `{{ OPTIONAL_PERSONALITY_ADDITION }}` in its harness template; omitted additions
 remove the marker, and supplied additions without an insertion point fail
 validation. Move old top-level `instructions` into `prompts.instructions`.
-With neither file, the built-in roles are used. New run snapshots retain the
-resolved prompts, original additions, tools, and original harness templates.
+With no manifest or personality files, the built-in roles are used. New run
+snapshots retain the allowed IDs, per-personality resolved prompts, original
+additions, tools, and original harness templates.
 See [the personality contract](schemas/config/v1/README.md) for examples and
-legacy tool-allowlist compatibility. Selection remains one orchestrator and one
-worker, not a generalized personality catalog.
+legacy tool-allowlist compatibility. The runner remains one orchestrator with
+sequential subagent assignments, not concurrent execution.
 
 ## Production
 

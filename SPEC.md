@@ -404,14 +404,16 @@ document for implementation limits and explicit unverified coverage.
 
 `schemas/config/v1/agent.schema.json` defines one self-contained JSON file per
 personality under `refAInery-config/prod/agents/<id>.json`. Required fields are
-`schemaVersion`, `id`, `name`, `role`, embedded `instructions`, and
-`availableTools`. Roles are `orchestrator` and `subagent`; model selection and
-execution state remain separate. Unknown fields and duplicate tool IDs are
-rejected. Instructions may contain Markdown; no instruction-file link is needed.
+`schemaVersion`, `id`, `name`, and `role`; optional `prompts` supplies literal
+additions to the harness-owned prompt slots, including `prompts.instructions`.
+Roles are `orchestrator` and `subagent`; model selection and execution state
+remain separate. Unknown fields and duplicate tool IDs are rejected.
+Instructions may contain Markdown; no instruction-file link is needed.
 
-The server owns the tool catalog. Each personality explicitly selects a subset
-by stable tool ID: empty means none, missing is invalid, and unknown or
-unauthorized IDs must fail validation before execution. New catalog tools do not
+The server owns the tool catalog. Optional `availableTools` selects a subset by
+stable tool ID; omission uses the harness role defaults. Explicit lists must
+retain required workflow tools. Unknown or unauthorized IDs fail validation
+before execution. New catalog tools do not
 expand existing permissions. The server must expose only the resolved allowlist,
 not default tools plus advisory instructions. It enforces orchestrator-only
 delegation and sequential work. Shell access requires separate workspace/network
@@ -421,12 +423,21 @@ Freeze complete personalities, resolved tool permissions, and the tool catalog/
 implementation version in each run's configuration. Attempts reference a frozen
 personality ID. Configuration edits affect future runs only; recovery must not
 silently substitute changed tool implementations. The supervised checkpoint schema includes the frozen configuration. The loader
-validates the initial two personalities against the role-specific catalog and
-explicitly loads their tools; arbitrary catalog plugins and recovery are not
-implemented.
+validates selected personalities against the role-specific catalog and explicitly
+loads their tools; arbitrary catalog plugins and recovery are not implemented.
 
-The config repository contains orchestrator and worker personalities. Both allow
-`web_search`. The worker additionally allows `web_fetch` and Pi's standard `read`,
+Each environment's `subagents.json` selects only `implementer` and `tester`.
+The orchestrator's delegation schema and the backend enforce this frozen list.
+Listed `agents/<id>.json` files must exist and match ID and subagent role;
+unlisted files do not add runtime choices. Dispatch selects by ID and uses
+per-personality resolved prompts. Tasks persist the selection before dispatch,
+and attempts must retain it. Historical worker records remain readable; configs
+without a manifest retain the legacy worker. This does not impose a mandatory
+testing gate or change the sequential execution model.
+
+The config repository contains orchestrator, implementer, and tester personalities.
+All three production personalities allow `web_search`. Both subagents additionally
+allow `web_fetch` and Pi's standard `read`,
 `write`, `edit`, and `bash` tools; the orchestrator has no file/shell access.
 The application-owned `source/extensions/web-search.ts` adapts the operator's existing
 provider-native web extension to take an explicit, frozen session allowlist.

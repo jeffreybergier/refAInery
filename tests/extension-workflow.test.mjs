@@ -16,10 +16,13 @@ const Type = {
 test('personalities expose only their workflow tools',async()=>{
   const config = await loadConfiguration(fileURLToPath(new URL('../config/', import.meta.url)));
   for(const agent of config.personalities) {
-    const id = agent.id;
     const tools=[];
-    createWorkflowExtension(Type,agent.availableTools,async()=>({saved:true}))({registerTool:(tool)=>tools.push(tool)});
-    assert.deepEqual(tools.map(t=>t.name),id==='worker' ? ['finish_task'] : ['update_plan','spawn_subagent','finish_request']);
+    createWorkflowExtension(Type,agent.availableTools,async()=>({saved:true}),config.subagentIds)({registerTool:(tool)=>tools.push(tool)});
+    assert.deepEqual(tools.map(t=>t.name),agent.role==='subagent' ? ['finish_task'] : ['update_plan','spawn_subagent','finish_request']);
+    if (agent.role === 'orchestrator') {
+      const selection = tools.find(t => t.name === 'spawn_subagent').parameters.properties.personality;
+      assert.deepEqual(selection.anyOf.map(item => item.const), ['implementer', 'tester']);
+    }
     assert.ok(tools.every(t=>t.executionMode==='sequential'));
   }
 });

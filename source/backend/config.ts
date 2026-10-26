@@ -11,17 +11,34 @@ export interface Personality {
   schemaVersion: 1; id: string; name: string; role: "orchestrator" | "subagent";
   instructions: string; availableTools: string[];
   personalityPrompts?: PersonalityPrompts;
+  resolvedPrompts?: Record<string, string>;
 }
 export const SDK_VERSION = "1.4.0";
-export const CATALOG_VERSION = "refainery-tools-v3";
+export const CATALOG_VERSION = "refainery-tools-v4";
 interface PersonalityOverlay {
   schemaVersion: 1; id: string; name: string; role: Personality["role"];
   prompts?: PersonalityPrompts; availableTools?: string[];
 }
 export async function loadConfiguration(root: string) {
   const schema = JSON.parse(await readFile(new URL("../../schemas/config/v1/agent.schema.json", import.meta.url), "utf8"));
-  const validate = new Ajv2020({ strict: true }).compile<PersonalityOverlay>(schema);
+  const ajv = new Ajv2020({ strict: true });
+  const validate = ajv.compile<PersonalityOverlay>(schema);
+  const selectionSchema = JSON.parse(await readFile(new URL("../../schemas/config/v1/subagents.schema.json", import.meta.url), "utf8"));
+  const validateSelection = ajv.compile<{ schemaVersion: 1; allowed: string[] }>(selectionSchema);
   await realpath(root); // A missing configuration root is not an absent overlay.
+  // lstat distinguishes an absent manifest from a broken or escaping symlink.
+  let explicitSelection = true;
+  try { await lstat(join(root, "subagents.json")); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    explicitSelection = false;
+  }
+  let subagentIds = ["worker"];
+  if (explicitSelection) {
+    const selection: unknown = JSON.parse(await safeRead(root, "subagents.json"));
+    if (!validateSelection(selection)) throw new Error(`Invalid subagent selection: ${JSON.stringify(validateSelection.errors)}`);
+    subagentIds = selection.allowed;
+  }
   let hasAgents = true;
   try { await lstat(join(root, "agents")); }
   catch (error) {
@@ -32,9 +49,14 @@ export async function loadConfiguration(root: string) {
   const agentFiles = hasAgents ? await readdir(join(root, "agents")) : [];
   const agentTemplates = structuredClone({ shared: { instructions, ...workflowMessages }, orchestrator: orchestratorText, subagent: subagentText });
   const agentText = structuredClone(agentTemplates);
+  agentText.subagent = resolveAgentText(agentTemplates.subagent);
   const personalities: Personality[] = [];
-  for (const base of [orchestrator, subagent]) {
+  const bases = [orchestrator, ...subagentIds.map((id) => ({ ...subagent, id }))];
+  for (const base of bases) {
     let overlay: PersonalityOverlay | undefined;
+    if (explicitSelection && base.role === "subagent" && !agentFiles.includes(`${base.id}.json`)) {
+      throw new Error(`Missing selected subagent: ${base.id}`);
+    }
     if (agentFiles.includes(`${base.id}.json`)) {
       const data: unknown = JSON.parse(await safeRead(root, `agents/${base.id}.json`));
       if (!validate(data)) {
@@ -47,16 +69,20 @@ export async function loadConfiguration(root: string) {
     const availableTools = overlay?.availableTools ?? [...base.availableTools];
     if (availableTools.some((tool) => !(base.allowedTools as readonly string[]).includes(tool))) throw new Error("Unauthorized tool");
     if (base.requiredTools.some((tool) => !availableTools.includes(tool))) throw new Error("Missing workflow tool");
+    const resolvedPrompts = base.role === "orchestrator"
+      ? resolveAgentText(agentTemplates.orchestrator, overlay?.prompts, base.id)
+      : resolveAgentText(agentTemplates.subagent, overlay?.prompts, base.id);
     if (base.role === "orchestrator") {
-      agentText.orchestrator = resolveAgentText(agentTemplates.orchestrator, overlay?.prompts, base.id);
-    } else {
-      agentText.subagent = resolveAgentText(agentTemplates.subagent, overlay?.prompts, base.id);
+      agentText.orchestrator = resolvedPrompts as typeof orchestratorText;
+    } else if (!explicitSelection) {
+      // Retain the legacy role-wide snapshot for old config consumers.
+      agentText.subagent = resolvedPrompts as typeof subagentText;
     }
-    const instructions = base.role === "orchestrator" ? agentText.orchestrator.instructions
-      : instructionsPrompt(agentText.subagent.instructions, agentText.subagent.handover);
+    const instructions = base.role === "orchestrator" ? resolvedPrompts.instructions
+      : instructionsPrompt(resolvedPrompts.instructions, agentTemplates.subagent.handover);
     personalities.push({ schemaVersion: 1, id: base.id, role: base.role,
       name: overlay?.name ?? base.name, availableTools,
-      instructions: systemPrompt(instructions),
+      instructions: systemPrompt(instructions), resolvedPrompts,
       ...(overlay?.prompts ? { personalityPrompts: structuredClone(overlay.prompts) } : {}),
     });
   }
@@ -65,6 +91,6 @@ export async function loadConfiguration(root: string) {
     const code = await readFile(new URL(`../extensions/${name}.ts`, import.meta.url), "utf8");
     extensions.push({ name, code, sha256: createHash("sha256").update(code).digest("hex") });
   }
-  return { personalities, agentTemplates, agentText, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };
+  return { personalities, subagentIds, agentTemplates, agentText, extensions, sdkVersion: SDK_VERSION, toolCatalogVersion: CATALOG_VERSION };
 }
 export type Configuration = Awaited<ReturnType<typeof loadConfiguration>>;

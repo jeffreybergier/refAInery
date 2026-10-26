@@ -80,3 +80,10 @@ plan references must name a saved revision. Multiple tasks are supported, each
 with one attempt; new worker assignments are not retries of uncertain executions.
 The backend records absences instead of fabricating files. Catalog v3 records the
 relaxed workflow policy; historical v1/v2 catalogs remain readable.
+
+Catalog v4 adds frozen `configuration.subagentIds` and per-personality
+`resolvedPrompts`. Each task stores its selected `personality` before dispatch;
+its attempt must retain that identity. Semantic validation checks membership,
+configuration consistency, and immutable task selection. The manifest and
+personality files are never reread during a run. Historical records without
+these new fields retain their legacy worker semantics; they are not rewritten.
