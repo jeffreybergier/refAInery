@@ -24,7 +24,7 @@ Only `schemaVersion`, `id`, `name`, and `role` are required when a file is
 present. The `prompts` object and every field inside it are optional. Unknown
 fields are rejected, and names must be nonblank. IDs are case-sensitive,
 1–128 ASCII letters/digits/underscores/hyphens, starting with a letter or digit.
-The current single-worker runner accepts only the two filenames/roles above;
+The current sequential-worker runner accepts only the two filenames/roles above;
 this is not yet a catalog of dynamically selectable personalities.
 
 Personality additions supplement, never replace, the role contract. They describe
@@ -102,12 +102,12 @@ Review behavior in the marked text sections at the top of:
 - `source/agents/orchestrator.ts`: `instructions`, `firstPrompt`, `firstReply`,
   `finalAnswer`, and `subagentReview`, plus the editable `planTemplate` constant.
 - `source/agents/subagent.ts`: `instructions`, `firstPrompt`, `firstReply`, and
-  `finalAnswer`, plus the handover format and context-handback prompt. Backend
-  handover validation uses the same template.
+  `finalAnswer`, plus the handover format and context-handback prompt. The format
+  guides the agent but is not enforced as a submission prerequisite.
 - `source/extensions/workflow.ts`: workflow tool descriptions, unchanged in this
   refactor. Schemas and handlers follow the text section.
-- `source/backend/workflow.ts`: corrective workflow guidance, followed by state
-  and persistence logic. Ordinary diagnostic errors stay near their checks.
+- `source/backend/workflow.ts`: workflow state and persistence logic. Diagnostic
+  errors stay near their checks.
 
 Prompt builders live below the text sections. The editable slots are multiline
 strings; marker-only slots are intentional scaffolding for authoring guidance,
@@ -128,7 +128,8 @@ format comes from `planTemplate` at the top of `source/agents/orchestrator.ts` a
 saved in the run snapshot. Without a request marker, request JSON is appended as a
 fallback, including for empty guidance. Subagent markers likewise expand in one
 pass: the delegated assignment, original user request, saved plan at dispatch,
-and snapshotted handover format. Missing request or plan context for a referenced
+and snapshotted handover format. With no saved plan, the runner supplies an empty
+plan string. Missing request or plan context for a referenced
 marker is an error. Without an assignment marker, assignment JSON is appended.
 These data markers are supported in `firstPrompt`. The subagent also supports
 `{{ HANDOVER_TEMPLATE }}` in `instructions`, substituting the snapshotted format

@@ -62,8 +62,8 @@ checkpoint/configuration/assignment schemas, and do not add fields to requests.
 
 ## Supervised checkpoint schema
 
-`checkpoint.schema.json` covers the explicitly bounded first milestone: one
-request, one worker, complete checkpoint revisions, frozen configuration,
+`checkpoint.schema.json` covers the supervised runner: one request, sequential
+workers, complete checkpoint revisions, frozen configuration,
 orchestrator turns, task/attempt identity, plan revisions, handover/export state,
 next-action decisions, and idempotency receipts. Receipt `argsHash` values prevent
 embedding plan/handover text in checkpoints. Terminal outcomes retain the
@@ -74,5 +74,9 @@ checks frozen-configuration equality, monotonic revision/history preservation,
 sequential execution, and valid handback/export relationships. Runtime validation
 is in `source/backend/validation.ts`; the backend tests exercise the actual schema.
 A schema-valid file alone does not establish durable publication, worker liveness,
-or permission to replay an uncertain action. Early checkpoints may have no plan
-or session yet; the backend records these absences instead of fabricating files.
+or permission to replay an uncertain action. A run may finish without any plan or
+worker; decision `plan` and attempt `planRevision` are nullable. Non-null attempt
+plan references must name a saved revision. Multiple tasks are supported, each
+with one attempt; new worker assignments are not retries of uncertain executions.
+The backend records absences instead of fabricating files. Catalog v3 records the
+relaxed workflow policy; historical v1/v2 catalogs remain readable.

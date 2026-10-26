@@ -72,7 +72,7 @@ export const subagent = {
   requiredTools: ["finish_task"],
 } as const;
 
-// The validation contract and the agent's template share one source of truth.
+// Expose template sections for inspection, not as submission prerequisites.
 export const handoverSections = subagentText.handover.split("\n").filter(Boolean);
 
 /** Place the handover format inline, retaining the legacy append fallback. */

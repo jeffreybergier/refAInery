@@ -43,7 +43,7 @@ export function validateCheckpoint(value: unknown, previous?: Checkpoint): asser
         (exported.state === "failed") !== (exported.error !== null)) throw new Error("Invalid export state");
   }
   for (const a of attempts) {
-    if (!paths.has(a.planRevision) ||
+    if ((a.planRevision !== null && !paths.has(a.planRevision)) ||
         (a.status === "completed" && (!a.handover || !a.stopReason || a.export.state === "not-due")) ||
         (a.review !== "not-submitted" && (!a.handover || !a.endedAt || a.export.state !== "saved")) ||
         (a.review === "decided") !== (a.reviewedAt !== null) ||

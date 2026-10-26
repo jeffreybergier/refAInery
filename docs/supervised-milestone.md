@@ -1,7 +1,8 @@
 # Supervised Pi workflow
 
-The same backend runs in both Docker environments. It executes **one request and
-one worker**, then stops; this is not an unattended scheduler or recovery engine.
+The same backend runs in both Docker environments. It executes **one request with
+zero or more sequential workers**, then stops; this is not an unattended queue
+scheduler or recovery engine.
 See the root README for the launcher and setup.
 
 ```sh
@@ -38,8 +39,8 @@ Their reviewed contents, hashes, SDK version and tool catalog version are frozen
 before each execution. The worker test personality omits native web capabilities;
 its script only calls local/workflow tools.
 
-Existing limits remain: one assignment, twelve inference requests across both
-sessions, 2,048 output tokens per call, no provider/agent retries, and a three-minute
+Existing resource limits remain: twelve inference requests across all sessions,
+2,048 output tokens per call, no provider/agent retries, and a three-minute
 deadline per prompted phase. Long-context handback is not live-validated.
 
 ## Ownership and sequencing
@@ -52,26 +53,33 @@ The application binds caller role/session identity to these tools:
 Worker stop reasons are `success`, `failure`, and `context-limit`. These report
 why the attempt stopped, not independent verification of the request. Request
 outcomes are `success`, `failure`, and `question`; the first two produce
-`completed` and `failed` run statuses. Failure or a question may be reported
-before dispatch when work cannot begin; success still requires worker review.
+`completed` and `failed` run statuses. Any outcome may be reported before worker
+dispatch; success does not require a worker handover. A nonempty Markdown handover
+is required by `finish_task`, but its headings are not enforced by the backend.
 
-A question persists the plan, question (`resultSummary`), and orchestrator
+A question retains any saved plan, the question (`resultSummary`), and orchestrator
 session export, then saves status/phase `waiting-for-user` without an end
 timestamp. It stops execution and blocks new dispatch just like other unfinished
 runs. It is not completion or an interruption. Answer ingestion and resuming a
 paused run are not implemented yet; operator intervention is required. No
 process or inference remains running while waiting.
 
-The application owns dispatch and persistence. Plans are saved before assignment
-or finalization. A yielding workflow tool must be the only tool call in its
+The application owns dispatch and persistence. Plans are optional; neither
+assignment nor finalization requires a plan or a revision in the current turn.
+Actions reference the latest plan when present, otherwise `null`. A worker's
+`{{ PLAN }}` placeholder receives an empty string when there is no plan. A yielding
+workflow tool must be the only tool call in its
 assistant message. The tool termination result stops Pi's automatic follow-up.
 Receipts make repeat call IDs idempotent; changed arguments with an existing ID
 remain an error.
 
 After a worker handover, the application saves its native Pi export, stops the
 worker container (including background work), and commits the review checkpoint.
-Only then does the orchestrator resume. The final plan/decision precedes the
-orchestrator's final session export and terminal checkpoint.
+Only then does the orchestrator resume. It may assign another worker without
+updating the plan. Each worker has its own session, handover, and export; the next
+sandbox uses the same persisted workspace and pinned image but no prior worker
+processes or temporary files. The final decision precedes the orchestrator's final
+session export and terminal checkpoint.
 
 ## Docker workspace
 
@@ -133,7 +141,9 @@ are web routes.
 checks, scripted end-to-end runs and Chromium checks in Docker. Disposable check
 storage is separate from interactive runs. It covers real Pi text and tool-call
 streaming, file operations, lifecycle/export boundaries, workflow reads in both
-environments, and scripted provider/tool failures.
+environments, direct completion without workers or plans, repeated assignments
+with absent or unchanged plans, workspace continuity across fresh sandboxes, and
+scripted provider/tool failures (including failure in a later worker).
 
 Live model quality, OpenRouter transport, paid web tools, crash recovery,
 long-context limits and access to actual project checkouts are not established

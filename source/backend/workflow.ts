@@ -2,13 +2,6 @@ import { createHash } from "node:crypto";
 import { Store, now, identity, numbered, requireText, readJSON, names, safeRead } from "./storage.ts";
 import type { Configuration } from "./config.ts";
 import { validateCheckpoint, validateRequest } from "./validation.ts";
-import { handoverSections } from "../agents/subagent.ts";
-
-// ── Workflow guidance: review corrective agent messages here ─────
-export const workflowGuidance = {
-  planRequired: "Call update_plan in this turn first",
-  assignmentLimit: "Milestone assignment budget exhausted; finish with an honest outcome",
-};
 
 // ── State, validation, and persistence ────────────────────────────
 
@@ -20,7 +13,7 @@ export interface Execution {
 export interface Attempt extends Execution {
   number: number; model: string; personality: string; sessionId: string; sessionPath: string;
   handover: string | null; export: ExportState; stopReason: string | null;
-  review: string; reviewedAt: string | null; retryReason: null; planRevision: string;
+  review: string; reviewedAt: string | null; retryReason: null; planRevision: string | null;
 }
 export interface Checkpoint {
   schemaVersion: 1; runId: string; requestId: string; number: number; savedAt: string;
@@ -29,7 +22,7 @@ export interface Checkpoint {
   plan: string | null; plans: { path: string; turnId: string; at: string }[];
   orchestrator: { sessionId: string; sessionPath: string; export: ExportState; turns: Execution[] };
   tasks: { id: string; title: string; model: string; assignment: string; attempts: Attempt[] }[];
-  decisions: { attemptId: string | null; at: string; action: string; summary: string; plan: string }[];
+  decisions: { attemptId: string | null; at: string; action: string; summary: string; plan: string | null }[];
   receipts: Record<string, { action: string; argsHash: string; result: unknown }>;
   pendingAction: { kind: "assign" | "finish"; outcome?: string; summary?: string } | null;
   failure: string | null;
@@ -120,24 +113,20 @@ export class Workflow {
         this.state.plans.push({ path, turnId: turn.id, at: now() });
         result = { saved: true, planRevision: path };
       } else if (name === "spawn_subagent" || name === "finish_request") {
-        if (this.state.plans.at(-1)?.turnId !== turn.id) throw new Error(workflowGuidance.planRequired);
         const summary = requireText(args.rationale);
         const last = this.state.tasks.at(-1)?.attempts.at(-1);
         if (last && (last.export.state !== "saved" || !last.endedAt)) throw new Error("Handback is not durable");
         if (name === "spawn_subagent") {
           if (args.personality !== "worker" || args.model !== "default") throw new Error("Selection outside frozen allowlist");
-          // This milestone intentionally permits one worker only, not an unattended factory.
-          if (this.state.tasks.length >= 1) throw new Error(workflowGuidance.assignmentLimit);
           const title = requireText(args.title, 512), assignment = requireText(args.assignment);
           this.state.tasks.push({ id: identity("task"), title, model: "default", assignment, attempts: [] });
           this.state.pendingAction = { kind: "assign" };
         } else {
           if (!["success", "failure", "question"].includes(String(args.outcome))) throw new Error("Invalid outcome");
-          if (!last && args.outcome === "success") throw new Error("Milestone requires a worker handover before success");
           this.state.pendingAction = { kind: "finish", outcome: String(args.outcome), summary: requireText(args.summary) };
         }
         if (last) { last.review = "decided"; last.reviewedAt = now(); }
-        this.state.decisions.push({ attemptId: last?.id ?? null, at: now(), action: name, summary, plan: this.state.plan! });
+        this.state.decisions.push({ attemptId: last?.id ?? null, at: now(), action: name, summary, plan: this.state.plan });
         result = { saved: true, action: name, planRevision: this.state.plan, yield: true };
       } else throw new Error("Tool not authorized for orchestrator");
     } else {
@@ -145,9 +134,6 @@ export class Workflow {
       if (name !== "finish_task" || !attempt || attempt.sessionId !== sessionId ||
           this.state.phase !== "executing" || attempt.handover) throw new Error("Tool not authorized for this attempt");
       const markdown = requireText(args.markdown);
-      for (const section of handoverSections) {
-        if (!markdown.includes(section)) throw new Error("Missing required handover section");
-      }
       if (!["success", "failure", "context-limit"].includes(String(args.stopReason))) throw new Error("Invalid stop reason");
       const path = `handovers/${attempt.id}.md`;
       await this.store.document(`${this.prefix}/${path}`, markdown);

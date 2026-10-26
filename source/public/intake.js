@@ -214,7 +214,7 @@ async function refresh() {
     }
     if (production) {
       const notes = {
-        "workflow-contract-note": `${label} supervised workflow: one request, one worker, explicit plan revisions and saved decisions. No automatic recovery or queue draining.`,
+        "workflow-contract-note": `${label} supervised workflow: one request, sequential workers, optional plan revisions and saved decisions. No automatic recovery or queue draining.`,
         "token-history-note": "Interval charts are not implemented. Per-call usage and reported costs are available in the run inspector.",
         "telemetry-note": "Saved state is not a worker heartbeat. Context capacity is 250,000 tokens; long-context handback still needs live validation.",
         "queue-contract-note": "Unclaimed intake records define queue membership; dispatch is explicit and blocked by unfinished runs.",

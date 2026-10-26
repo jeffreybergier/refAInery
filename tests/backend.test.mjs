@@ -13,7 +13,7 @@ import { nativeExport, withLegacyFallback } from './helpers/pi-export.mjs';
 import { validateCheckpoint } from '../source/backend/validation.ts';
 
 const configuration = () => ({ id: identity('config'), personalities: [], extensions: [], sdkVersion: '1.4.0',
-  toolCatalogVersion: 'refainery-tools-v2', models: [{id:'default',provider:'openrouter',modelId:'requested-alias',contextWindow:250000}], orchestratorModel:'default' });
+  toolCatalogVersion: 'refainery-tools-v3', models: [{id:'default',provider:'openrouter',modelId:'requested-alias',contextWindow:250000}], orchestratorModel:'default' });
 const catalog = () => ({ data: [{id:'requested-alias', context_length:300000, pricing:{prompt:'0.000001',completion:'0.000002'}, supported_parameters:['tools']}], total_count:1, links:{next:null} });
 const handover = '## Goal\nTest\n## Constraints & Preferences\nNone\n## Progress\n### Done\nVerified\n### In Progress\nNone\n### Blocked\nNone\n## Key Decisions\nNone\n## Next Steps\nNone\n## Critical Context\nNone\n<read-files>\n</read-files>\n<modified-files>\n</modified-files>\n';
 async function setup(t) {
@@ -46,9 +46,8 @@ test('FIFO intake preserves prompts and unfinished runs block dispatch',async(t)
   await assert.rejects(queuedRequests(store),/recovery/);
 });
 
-test('plan gate, role/session authority, idempotent calls and revision history',async(t)=>{
+test('role/session authority, idempotent calls and optional plan revision history',async(t)=>{
   const {flow,store}=await planning(t);
-  await assert.rejects(action(flow,'a','spawn_subagent',assignment),/update_plan/);
   await assert.rejects(flow.action('orchestrator','wrong','p','update_plan',{markdown:'plan'}),/planning/);
   await assert.rejects(flow.action('subagent','worker','p','update_plan',{markdown:'plan'}),/authorized/);
   const saved=await action(flow,'p','update_plan',{markdown:'# Plan\nFirst'});
@@ -69,9 +68,9 @@ test('write failure poisons workflow and prevents later actions',async(t)=>{
   await assert.rejects(action(flow,'a','spawn_subagent',assignment),/degraded/);
 });
 
-async function handback(t, stopReason = 'success') {
+async function handback(t, stopReason = 'success', { plan = true, markdown = handover } = {}) {
   const context=await planning(t);const {flow,store}=context;
-  await action(flow,'plan1','update_plan',{markdown:'# Initial plan'});
+  if (plan) await action(flow,'plan1','update_plan',{markdown:'# Initial plan'});
   await action(flow,'assign','spawn_subagent',assignment);await flow.endTurn();
   flow.state.pendingAction=null;flow.state.phase='executing';
   flow.state.tasks[0].attempts.push({id:'attempt-one',title:'Small task',number:1,model:'default',personality:'worker',
@@ -80,11 +79,11 @@ async function handback(t, stopReason = 'success') {
   await store.document(`${flow.prefix}/sessions/worker.jsonl`, 'test-only session placeholder\n');
   await flow.save();
   await assert.rejects(flow.action('subagent','wrong','h','finish_task',{markdown:handover,stopReason}));
-  await assert.rejects(flow.action('subagent','session-worker','bad','finish_task',{markdown:'# Incomplete',stopReason}));
+  await assert.rejects(flow.action('subagent','session-worker','bad','finish_task',{markdown:'',stopReason}));
   await assert.rejects(flow.action('subagent','session-worker','legacy','submit_handover',{markdown:handover,stopReason}),/authorized/);
   await assert.rejects(flow.action('subagent','session-worker','invalid','finish_task',{markdown:handover,stopReason:'completed'}),/stop reason/);
   await assert.rejects(flow.action('subagent','session-worker','scope','finish_request',{outcome:'success',summary:'done',rationale:'done'}),/authorized/);
-  await flow.action('subagent','session-worker','h','finish_task',{markdown:handover,stopReason});
+  await flow.action('subagent','session-worker','h','finish_task',{markdown,stopReason});
   assert.equal(flow.state.phase,'stopping-worker');
   const a=flow.state.tasks[0].attempts[0];a.endedAt=now();a.status='completed';
   a.export={state:'pending',path:null,error:null};await flow.save();
@@ -97,7 +96,6 @@ async function handback(t, stopReason = 'success') {
 test('handover -> new plan -> decision uses real saved documents and no acceptance fiction',async(t)=>{
   const {flow,store}=await handback(t);
   await flow.beginTurn();
-  await assert.rejects(action(flow,'finish','finish_request',{outcome:'success',summary:'done',rationale:'checked'}),/update_plan/);
   await action(flow,'plan2','update_plan',{markdown:'# Final plan\nDone'});
   await action(flow,'finish','finish_request',{outcome:'success',summary:'done',rationale:'checked'});await flow.endTurn();
   assert.equal(flow.state.tasks[0].attempts[0].review,'decided');
@@ -111,6 +109,36 @@ test('handover -> new plan -> decision uses real saved documents and no acceptan
   assert.equal(view.operations.outcomes.decided,1);assert.equal(view.operations.outcomes.accepted,0);
   assert.equal(view.runs[0].plans.length,2);assert.equal((await queuedRequests(store)).length,0);
 });
+
+test('workers can start without a plan and submit arbitrary nonempty handover Markdown', async t => {
+  const markdown = 'Completed the task. Checked the output.';
+  const { flow, store } = await handback(t, 'success', { plan: false, markdown });
+  assert.equal(flow.state.plan, null);
+  assert.deepEqual(flow.state.plans, []);
+  assert.equal(flow.state.tasks[0].attempts[0].planRevision, null);
+  assert.equal(flow.state.decisions[0].plan, null);
+  assert.equal(await readFile(store.path(flow.prefix, flow.state.tasks[0].attempts[0].handover), 'utf8'), markdown);
+  const data = await loadProduction(store);
+  assert.equal(workflowPresentation(data).runs[0].plan, undefined);
+  const invalid = structuredClone(flow.state);
+  invalid.tasks[0].attempts[0].planRevision = 'plans/missing.md';
+  assert.throws(() => validateCheckpoint(invalid), /handback/);
+});
+
+for (const plan of [false, true]) {
+  test(`another worker can be assigned after handover without updating the ${plan ? 'existing' : 'absent'} plan`, async t => {
+    const { flow, store } = await handback(t, 'success', { plan });
+    await flow.beginTurn();
+    const receipt = await action(flow, 'verify', 'spawn_subagent', { ...assignment, title: 'Verify previous work' });
+    assert.deepEqual(await action(flow, 'verify', 'spawn_subagent', { ...assignment, title: 'Verify previous work' }), receipt);
+    assert.equal(flow.state.tasks.length, 2);
+    assert.equal(flow.state.tasks[0].attempts[0].review, 'decided');
+    assert.equal(flow.state.pendingAction.kind, 'assign');
+    assert.equal(flow.state.decisions.at(-1).plan, flow.state.plan);
+    assert.equal(flow.state.plans.length, plan ? 1 : 0);
+    assert.equal((await loadProduction(store)).runs[0].checkpoints.at(-1).tasks.length, 2);
+  });
+}
 
 test('historical tool-catalog checkpoints remain readable', async (t) => {
   const { flow } = await handback(t);
@@ -135,18 +163,14 @@ for (const stopReason of ['failure', 'context-limit']) {
   });
 }
 
-for (const outcome of ['failure', 'question']) {
+for (const outcome of ['success', 'failure', 'question']) {
   for (const afterWorker of [false, true]) {
     test(`${outcome} ${afterWorker ? 'after review' : 'before dispatch'} is persisted honestly`, async (t) => {
       const { flow, store } = await (afterWorker ? handback(t) : planning(t));
       if (afterWorker) await flow.beginTurn();
-      await action(flow, 'final-plan', 'update_plan', { markdown: '# Plan\nBlocked pending user input.' });
       const args = { outcome, summary: 'Which target should be used?', rationale: 'Essential target missing.' };
       await assert.rejects(action(flow, 'old', 'finish_run', args), /authorized/);
       await assert.rejects(action(flow, 'bad', 'finish_request', { ...args, outcome: 'completed' }), /outcome/);
-      if (!afterWorker) {
-        await assert.rejects(action(flow, 'success', 'finish_request', { ...args, outcome: 'success' }), /handover/);
-      }
       const receipt = await action(flow, 'finish', 'finish_request', args);
       assert.deepEqual(await action(flow, 'finish', 'finish_request', args), receipt);
       await assert.rejects(flow.finishRequest(), /durable/);
@@ -158,7 +182,9 @@ for (const outcome of ['failure', 'question']) {
       const saved = (await loadProduction(store)).runs[0].checkpoints.at(-1);
       assert.equal(saved.resultSummary, args.summary);
       assert.equal(saved.pendingAction, null);
-      assert.equal(saved.status, outcome === 'question' ? 'waiting-for-user' : 'failed');
+      assert.equal(saved.status, { success: 'completed', failure: 'failed', question: 'waiting-for-user' }[outcome]);
+      assert.equal(saved.plans.length, afterWorker ? 1 : 0);
+      assert.equal(saved.decisions.at(-1).plan, afterWorker ? saved.plan : null);
       assert.equal(saved.phase, outcome === 'question' ? 'waiting-for-user' : 'ended');
       assert.equal(saved.endedAt === null, outcome === 'question');
       assert.equal(saved.tasks.length, afterWorker ? 1 : 0);

@@ -1,8 +1,8 @@
 # refAInery
 
 A personal AI workshop with a dark Bootstrap control room and a Pi-backed,
-supervised workflow: one request, one worker, plan revisions, handover, review,
-checkpoints, native Pi sessions and HTML exports.
+supervised workflow: one request, sequential workers, optional plan revisions,
+handover, review, checkpoints, native Pi sessions and HTML exports.
 
 ## Two environments, all execution in Docker
 
@@ -101,9 +101,9 @@ the scripted provider understand or dynamically solve that request.
 
 The harness owns the fundamental orchestrator and subagent contracts. Review
 instructions and prompts in the marked top sections of `source/agents/shared.ts`,
-`orchestrator.ts`, and `subagent.ts`; workflow descriptions and corrective guidance
-have equivalent sections in `source/extensions/workflow.ts` and
-`source/backend/workflow.ts`.
+`orchestrator.ts`, and `subagent.ts`; workflow descriptions have an equivalent
+section in `source/extensions/workflow.ts`. Workflow state and persistence logic
+live in `source/backend/workflow.ts`.
 
 Each role has editable `instructions`, `firstPrompt`, `firstReply`, and
 `finalAnswer` slots; the orchestrator also has `subagentReview`. `firstReply`
@@ -165,8 +165,13 @@ workers. This implementation adds no network-egress policy or additional
 credential/mount enforcement. It does not grant agents access to app checkouts.
 
 The workflow is still supervised and single-request. Existing limits and
-recovery behavior remain: one assignment, twelve inference calls, no automatic
-queue draining or replay. See [workflow details](docs/supervised-milestone.md).
+recovery behavior remain: twelve inference calls across all sessions, no automatic
+queue draining or replay. Multiple worker assignments are supported sequentially;
+each gets a fresh sandbox using the same workspace and pinned image. Plans are
+optional, may be reused across turns, and are not prerequisites for assignment or
+completion. Success does not require a worker assignment. Handover templates are
+prompt guidance, not a required heading checklist enforced by the backend.
+See [workflow details](docs/supervised-milestone.md).
 
 ## Checks
 

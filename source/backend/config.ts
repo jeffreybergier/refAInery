@@ -13,7 +13,7 @@ export interface Personality {
   personalityPrompts?: PersonalityPrompts;
 }
 export const SDK_VERSION = "1.4.0";
-export const CATALOG_VERSION = "refainery-tools-v2";
+export const CATALOG_VERSION = "refainery-tools-v3";
 interface PersonalityOverlay {
   schemaVersion: 1; id: string; name: string; role: Personality["role"];
   prompts?: PersonalityPrompts; availableTools?: string[];

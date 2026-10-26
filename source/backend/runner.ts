@@ -15,7 +15,7 @@ export interface RunOptions {
   onProgress?: (stage: string) => void;
 }
 
-/** Supervised single-request scheduler. Never resumes or repeats uncertain work. */
+/** Single-request scheduler with sequential workers. Never replays uncertain work. */
 export async function runOnce(options: RunOptions) {
   const store = new Store(options.storage);
   const scripted = options.scenario ? new ScriptedResponses(options.scenario) : undefined;
@@ -69,8 +69,10 @@ export async function runOnce(options: RunOptions) {
     await orchestrator.prompt(orchestratorFirstPrompt(request.prompt,
       config.agentText.orchestrator.firstPrompt, config.agentText.orchestrator.planTemplate));
     await engine.endTurn();
-    if (engine.state.pendingAction?.kind === "assign") {
+    while (engine.state.pendingAction?.kind === "assign") {
       stage("worker-starting");
+      // Each worker gets a fresh process environment and the same persisted files.
+      if (engine.state.tasks.length > 1) await sandbox.start();
       engine.state.phase = "dispatching";
       await engine.save();
       worker = await adapter.create(config.personalities.find((p) => p.role === "subagent")!);
@@ -79,12 +81,13 @@ export async function runOnce(options: RunOptions) {
       task.attempts.push({ id: identity("attempt"), title: task.title, number: 1, model: "default", personality: "worker",
         sessionId: worker.sessionId, sessionPath: worker.path, status: "running", startedAt: now(), endedAt: null,
         handover: null, export: notDue(), stopReason: null, review: "not-submitted", reviewedAt: null,
-        retryReason: null, planRevision: engine.state.plan! });
+        retryReason: null, planRevision: engine.state.plan });
       engine.state.pendingAction = null;
       engine.state.phase = "executing";
       await engine.save(); // Dispatch intent saved before calling Pi.
       stage("worker-executing");
-      const plan = await safeRead(store.root, `${engine.prefix}/${engine.state.plan!}`);
+      const plan = engine.state.plan === null ? ""
+        : await safeRead(store.root, `${engine.prefix}/${engine.state.plan}`);
       await worker.prompt(subagentFirstPrompt(assignment, config.agentText.subagent.firstPrompt, {
         request: request.prompt, plan, handoverTemplate: config.agentText.subagent.handover,
       }));

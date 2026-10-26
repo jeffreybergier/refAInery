@@ -50,6 +50,7 @@ const fs = require('node:fs/promises'), p = require('node:path');
 
 export class Sandbox {
   private started = false;
+  private imageId?: string;
   readonly name: string;
   readonly workspace: string;
   readonly image: string;
@@ -61,10 +62,13 @@ export class Sandbox {
     await mkdir(this.workspace, { recursive: true, mode: 0o777 });
     const { chmod } = await import("node:fs/promises");
     await chmod(this.workspace, 0o777);
-    const inspect = await docker(["image", "inspect", "--format", "{{.Id}}", this.image]);
-    if (inspect.code) throw new Error("Sandbox image unavailable; pull it explicitly first");
-    // Use the inspected immutable image ID, never silently pull during agent execution.
-    const imageId = inspect.text.trim();
+    if (!this.imageId) {
+      const inspect = await docker(["image", "inspect", "--format", "{{.Id}}", this.image]);
+      if (inspect.code) throw new Error("Sandbox image unavailable; pull it explicitly first");
+      this.imageId = inspect.text.trim();
+    }
+    // Pin every worker in this run to the first inspected image; never pull here.
+    const imageId = this.imageId;
     // Docker resolves bind sources on the host, not inside this controller.
     const hostWorkspace = process.env.REFAINERY_HOST_STORAGE
       ? join(process.env.REFAINERY_HOST_STORAGE, relative("/app/storage", this.workspace))

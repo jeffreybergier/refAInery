@@ -68,7 +68,7 @@ callback. This avoids runtime module resolution from the separate config repo.
 - `spawn_subagent` and `finish_request` save the orchestrator's next action and yield.
 - `finish_task` saves the worker handover/stop reason and yields.
 
-The tool catalog is `refainery-tools-v2`. Worker stop reasons are `success`,
+The tool catalog is `refainery-tools-v3`. Worker stop reasons are `success`,
 `failure`, and `context-limit`; request outcomes are `success`, `failure`, and
 `question`. The backend maps request success/failure to the existing
 completed/failed run statuses. A question saves a `waiting-for-user` run, with
@@ -81,8 +81,12 @@ after the backend acknowledges durable state. The backend additionally forbids
 mixing terminal workflow tools with other calls in a single assistant message;
 otherwise a batch could defeat the intended yield. Host errors become failed
 tool results, never fabricated success. Default file loading registers no tools.
-Role checks, current-turn plan requirements, idempotency, scheduling, exports and
-checkpoint transitions are backend responsibilities, not extension-local state.
+Role checks, idempotency, sequential scheduling, exports and checkpoint transitions
+are backend responsibilities, not extension-local state. There is no plan-before-
+action requirement or single-assignment limit. Any request outcome may be reported
+without a worker, and handover headings are guidance rather than validation gates.
+The existing inference/context limits, tool schemas and persistence safeguards
+still apply.
 
 ## Offline checks
 

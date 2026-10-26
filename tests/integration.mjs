@@ -7,6 +7,7 @@ import { loadScenario } from '../source/backend/scenario.ts';
 import { modelConfiguration } from '../source/environment.ts';
 import { Store } from '../source/backend/storage.ts';
 import { loadProduction } from '../source/backend/workflow.ts';
+import { workflowPresentation } from '../source/public/workflow.js';
 import { createAppServer } from '../source/server.ts';
 import { loadConfiguration } from '../source/backend/config.ts';
 import { firstPrompt as orchestratorFirstPrompt } from '../source/agents/orchestrator.ts';
@@ -78,17 +79,18 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
   ['question-after-review', 'question', 'success', false],
   ['question-before-dispatch', 'question', null, true],
   ['failure-before-dispatch', 'failure', null, true],
+  ['success-before-dispatch', 'success', null, true],
 ]) {
   const root = join(storage, name);
   await mkdir(root);
   const finish = { ...scenario.responses.at(-1), arguments: {
     outcome, summary: 'Which target should be used?', rationale: 'Essential target missing.',
   } };
-  const responses = beforeDispatch ? [scenario.responses[0], finish]
+  const responses = beforeDispatch ? [finish]
     : scenario.responses.map(step => step.tool === 'finish_request' ? finish
       : step.tool === 'finish_task' ? { ...step, arguments: { ...step.arguments, stopReason } } : step);
   const result = await runOnce({ ...options, storage: root, scenario: { ...scenario, responses } });
-  assert.equal(result.outcome, outcome === 'question' ? 'waiting-for-user' : 'failed');
+  assert.equal(result.outcome, { success: 'completed', failure: 'failed', question: 'waiting-for-user' }[outcome]);
   const data = await loadProduction(new Store(root));
   const state = data.runs[0].checkpoints.at(-1);
   assert.equal(state.phase, outcome === 'question' ? 'waiting-for-user' : 'ended');
@@ -96,9 +98,92 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
   assert.equal(state.resultSummary, finish.arguments.summary);
   assert.equal(state.orchestrator.export.state, 'saved');
   assert.equal(state.tasks.length, beforeDispatch ? 0 : 1);
+  if (beforeDispatch) {
+    assert.equal(state.plan, null);
+    assert.deepEqual(state.plans, []);
+    assert.equal(state.decisions[0].plan, null);
+  }
   assert.equal(data.inferences.length, responses.length);
   if (!beforeDispatch) assert.equal(state.tasks[0].attempts[0].stopReason, stopReason);
 }
+// Sequential verification workers share files, not running processes. Plans are
+// optional and an existing revision may be reused across every review turn.
+for (const withPlan of [false, true]) {
+  const root = join(storage, withPlan ? 'reused-plan-workers' : 'no-plan-workers');
+  await mkdir(root);
+  const assign = title => ({ agent: 'orchestrator', tool: 'spawn_subagent', arguments: {
+    personality: 'worker', model: 'default', title, assignment: title, rationale: 'Continue the work',
+  } });
+  const handback = summary => ({ agent: 'worker', tool: 'finish_task', arguments: {
+    markdown: summary, stopReason: 'success',
+  } });
+  const workerSteps = [
+    assign('Create the artifact'),
+    { agent: 'worker', tool: 'write', arguments: { path: 'shared.txt', content: 'Verified artifact\n' } },
+    { agent: 'worker', tool: 'bash', arguments: { command: 'touch /tmp/previous-worker' } },
+    handback('Created shared.txt.'),
+    assign('Verify the artifact'),
+    { agent: 'worker', tool: 'read', arguments: { path: 'shared.txt' } },
+    { agent: 'worker', tool: 'bash', arguments: {
+      command: 'test ! -e /tmp/previous-worker && test "$(cat shared.txt)" = "Verified artifact"',
+    } },
+    handback('Verified persisted contents in a fresh sandbox.'),
+    assign('Review the verification findings'),
+    handback('Reviewed the supplied findings.'),
+    { agent: 'orchestrator', tool: 'finish_request', arguments: {
+      outcome: 'success', summary: 'Artifact created and verified.', rationale: 'Reviewed the worker results.',
+    } },
+  ];
+  const responses = withPlan ? [scenario.responses[0], ...workerSteps] : workerSteps;
+  const result = await runOnce({ ...options, storage: root, scenario: { ...scenario, responses } });
+  assert.equal(result.outcome, 'completed');
+  const store = new Store(root), saved = await loadProduction(store);
+  const state = saved.runs[0].checkpoints.at(-1);
+  assert.equal(state.tasks.length, 3);
+  assert.equal(state.orchestrator.turns.length, 4);
+  assert.equal(state.plans.length, withPlan ? 1 : 0);
+  assert.equal(saved.inferences.length, responses.length);
+  assert.equal(state.decisions.length, 4);
+  for (const decision of state.decisions) assert.equal(decision.plan, state.plan);
+  const attempts = state.tasks.flatMap(task => task.attempts);
+  assert.equal(new Set(attempts.map(a => a.sessionId)).size, 3);
+  assert.equal(new Set(attempts.map(a => a.export.path)).size, 3);
+  for (const [index, attempt] of attempts.entries()) {
+    assert.equal(attempt.planRevision, state.plan);
+    assert.equal(attempt.review, 'decided');
+    assert.equal(attempt.export.state, 'saved');
+    const session = (await readFile(store.path('runs', result.runId, attempt.sessionPath), 'utf8'))
+      .trim().split('\n').map(line => JSON.parse(line)).filter(e => e.type === 'message').map(e => e.message);
+    assert.ok(!session.some(m => m.role === 'toolResult' && m.isError));
+    const firstUser = session.find(m => m.role === 'user');
+    const text = typeof firstUser.content === 'string' ? firstUser.content
+      : firstUser.content.filter(part => part.type === 'text').map(part => part.text).join('');
+    assert.equal(text, subagentFirstPrompt(state.tasks[index].assignment,
+      state.configuration.agentText.subagent.firstPrompt, {
+        request: scenario.prompt,
+        plan: withPlan ? scenario.responses[0].arguments.markdown : '',
+        handoverTemplate: state.configuration.agentText.subagent.handover,
+      }));
+  }
+  assert.equal(saved.documents.filter(d => d.kind === 'html').length, 4);
+  const view = workflowPresentation(saved);
+  assert.equal(view.runs[0].tasks.length, 7);
+  assert.equal(view.operations.outcomes.decided, 3);
+  assert.equal(view.runs[0].plan === undefined, !withPlan);
+  if (!withPlan) {
+    const interruptedRoot = join(storage, 'second-worker-error');
+    await mkdir(interruptedRoot);
+    await assert.rejects(runOnce({ ...options, storage: interruptedRoot, scenario: { ...scenario,
+      responses: [...workerSteps.slice(0, 5), { agent: 'worker', error: 'Second worker failed' }],
+    } }), /Milestone incomplete/);
+    const interrupted = (await loadProduction(new Store(interruptedRoot))).runs[0].checkpoints.at(-1);
+    assert.equal(interrupted.phase, 'recovery-required');
+    assert.equal(interrupted.tasks[0].attempts[0].status, 'completed');
+    assert.equal(interrupted.tasks[0].attempts[0].export.state, 'saved');
+    assert.equal(interrupted.tasks[1].attempts[0].status, 'interrupted');
+  }
+}
+
 // Exercise every personality addition through the resolved run configuration.
 {
   const promptConfig = join(storage, 'prompt-config');

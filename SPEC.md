@@ -37,7 +37,7 @@ This section and README supersede the historical preview setup below.
 
 refAInery is a Node.js/TypeScript application with a dark Bootstrap dashboard.
 Its offline previews display fictional fixtures. The opt-in supervised backend
-now executes a real request with one worker, persists the workflow, and feeds v1.
+now executes a real request with sequential workers, persists the workflow, and feeds v1.
 It does not yet automatically drain the queue or resume interrupted work.
 
 `/` redirects to `/v1`. `/v1` presents the full agreed workflow below; `/v2`
@@ -172,8 +172,8 @@ currently an explicit CLI operation, not a browser write API.
 The full design places top-level requests in a **FIFO queue** and starts the
 oldest request when free. The current milestone is deliberately supervised:
 `run-once.py` accepts one request, requires no previously queued/unfinished work,
-runs one worker, and stops. Automatic dispatch and multiple subagents per run
-are follow-up work, not enabled behavior.
+runs zero or more workers sequentially, and stops. Automatic queue dispatch
+remains follow-up work; multiple subagents within one run are supported.
 
 - One top-level run is active at a time.
 - All subwork stays inside that run, ahead of the next queued request.
@@ -199,9 +199,9 @@ the original request is finished.
 The implemented tools are `update_plan`, `spawn_subagent`, `finish_request`, and
 worker-only `finish_task`. Their thin Pi definitions live in `source/extensions/`;
 the backend binds caller identity and owns durable transitions. The orchestrator
-must save a full Markdown plan in each planning/review turn before assignment or
-finalization. Each revision is immutable and each subsequent action references
-it. Reviewing uses a prompt plus the next saved action, not a `review_handover`
+may save a full Markdown plan at any point in a planning/review turn. Neither
+assignment nor finalization requires a plan or a new revision. Each saved revision
+is immutable; actions reference the latest revision, or null if none exists. Reviewing uses a prompt plus the next saved action, not a `review_handover`
 tool or a required accepted/rejected ceremony. Production records use pending
 versus decision-recorded states; preview accepted/rejected examples stay fictional.
 Terminal workflow tools must be called alone and yield control.
