@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfiguration } from '../source/backend/config.ts';
 import { orchestratorText, planTemplate, firstPrompt as orchestratorFirstPrompt, subagentReview } from '../source/agents/orchestrator.ts';
-import { subagentText, firstPrompt as subagentFirstPrompt, handoverSections } from '../source/agents/subagent.ts';
+import { subagentText, firstPrompt as subagentFirstPrompt, handoverSections, instructionsPrompt } from '../source/agents/subagent.ts';
 import { sharedText, composePrompt, resolveAgentText, personalityAdditionMarker as marker } from '../source/agents/shared.ts';
 import { Store } from '../source/backend/storage.ts';
 import { Workflow, enqueue } from '../source/backend/workflow.ts';
@@ -27,7 +27,7 @@ test('absent personalities resolve complete default roles and frozen text', asyn
   assert.deepEqual(config.personalities.map(p => p.id), ['orchestrator', 'worker']);
   const [orchestrator, worker] = config.personalities;
   assert.ok(orchestrator.instructions.includes(composePrompt(orchestratorText.instructions)));
-  assert.ok(worker.instructions.includes(composePrompt(subagentText.instructions)));
+  assert.ok(worker.instructions.includes(instructionsPrompt(composePrompt(subagentText.instructions), subagentText.handover)));
   assert.ok(worker.instructions.includes(subagentText.handover));
   for (const p of config.personalities) {
     assert.ok(p.instructions.includes(sharedText.instructions));
@@ -39,7 +39,7 @@ test('absent personalities resolve complete default roles and frozen text', asyn
   assert.deepEqual(config.agentText, { shared: sharedText,
     orchestrator: resolveAgentText(orchestratorText), subagent: resolveAgentText(subagentText) });
   assert.equal(config.agentText.orchestrator.firstReply, composePrompt(orchestratorText.firstReply));
-  assert.equal(config.agentText.subagent.finalAnswer.trim(), '');
+  assert.equal(config.agentText.subagent.finalAnswer, composePrompt(subagentText.finalAnswer));
   // Snapshot schema accepts new text while existing historical tests omit it.
   const store = new Store(root);
   const flow = new Workflow(store, await enqueue(store, 'Test defaults'), {
@@ -57,7 +57,8 @@ test('personality supplements core text and retains original guidance for audit'
   const config = await loadConfiguration(root), worker = config.personalities[1];
   assert.equal(worker.name, overlay.name);
   assert.deepEqual(worker.personalityPrompts, overlay.prompts);
-  assert.ok(worker.instructions.startsWith(composePrompt(subagentText.instructions, overlay.prompts.instructions)));
+  assert.ok(worker.instructions.startsWith(instructionsPrompt(
+    composePrompt(subagentText.instructions, overlay.prompts.instructions), subagentText.handover)));
   assert.ok(worker.instructions.includes(sharedText.instructions));
   assert.equal(config.agentText.subagent.instructions, composePrompt(subagentText.instructions, overlay.prompts.instructions));
   assert.deepEqual(worker.availableTools, ['read', 'write', 'edit', 'bash', 'finish_task']);
@@ -99,7 +100,10 @@ test('all personality prompt slots resolve before dispatch and retain their raw 
     }
     const personality = config.personalities.find(p => p.role === role);
     assert.deepEqual(personality.personalityPrompts, prompts);
-    assert.ok(personality.instructions.includes(config.agentText[role].instructions));
+    const expectedInstructions = role === 'subagent'
+      ? instructionsPrompt(config.agentText[role].instructions, config.agentText[role].handover)
+      : config.agentText[role].instructions;
+    assert.ok(personality.instructions.includes(expectedInstructions));
   }
   const frozenReply = config.agentText.subagent.firstReply;
   config.agentTemplates.subagent.firstReply = 'Changed raw template';
@@ -182,6 +186,29 @@ test('orchestrator request and plan markers expand literally in one pass', () =>
     '# Plan\n\n' + JSON.stringify({ request: 'Task' }, null, 2));
 });
 
+test('subagent system handover marker expands inline once with a legacy fallback', async t => {
+  const handover = '## Format\n$& {{ HANDOVER_TEMPLATE }} {{ REQUEST }}';
+  assert.equal(instructionsPrompt('Before\n{{ HANDOVER_TEMPLATE }}\nAfter', handover),
+    `Before\n${handover}\nAfter`);
+  assert.equal(instructionsPrompt('{{ HANDOVER_TEMPLATE }}|{{ HANDOVER_TEMPLATE }}', handover),
+    `${handover}|${handover}`);
+  assert.equal(instructionsPrompt('Legacy', handover), `Legacy\n\n${handover}`);
+  assert.equal(instructionsPrompt('', handover), `\n\n${handover}`);
+  const original = subagentText.instructions;
+  try {
+    subagentText.instructions = 'Before\n{{ HANDOVER_TEMPLATE }}\nAfter\n' + marker;
+    const config = await loadConfiguration(await setup(t));
+    const worker = config.personalities.find(p => p.role === 'subagent');
+    assert.ok(worker.instructions.includes(`Before\n${subagentText.handover}\nAfter`));
+    assert.equal(worker.instructions.split(subagentText.handover).length - 1, 1);
+    assert.ok(!worker.instructions.includes('{{ HANDOVER_TEMPLATE }}'));
+    assert.equal(config.agentTemplates.subagent.instructions, subagentText.instructions);
+    assert.ok(config.agentText.subagent.instructions.includes('{{ HANDOVER_TEMPLATE }}'));
+  } finally {
+    subagentText.instructions = original;
+  }
+});
+
 test('subagent markers expand assignment, request, plan and frozen handover literally', () => {
   const assignment = 'Task $& {{ REQUEST }}';
   const context = { request: 'Original {{ PLAN }}', plan: '# Plan\n{{ ASSIGNMENT }}',
@@ -191,7 +218,7 @@ test('subagent markers expand assignment, request, plan and frozen handover lite
     `${context.plan}\n${assignment}\n${context.request}\n${context.handoverTemplate}\n${assignment}`);
   const prompt = subagentFirstPrompt('Delegated task', undefined,
     { request: 'Original request', plan: '# Saved plan' });
-  for (const value of ['Delegated task', 'Original request', '# Saved plan', subagentText.handover]) {
+  for (const value of ['Delegated task', 'Original request', '# Saved plan']) {
     assert.ok(prompt.includes(value));
   }
   assert.ok(!/\{\{ (ASSIGNMENT|REQUEST|PLAN|HANDOVER_TEMPLATE) \}\}/.test(prompt));

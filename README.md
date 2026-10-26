@@ -123,8 +123,10 @@ delegated task), `{{ REQUEST }}` (the original user request), `{{ PLAN }}` (the
 saved plan at dispatch), and `{{ HANDOVER_TEMPLATE }}` (the snapshotted
 `subagentText.handover` format). These also expand in one pass. Without an
 assignment marker, assignment JSON is appended as a fallback. These data markers
-are supported in `firstPrompt`, not in other prompt slots. The handover format
-also remains in the subagent's system instructions.
+are supported in `firstPrompt`. Additionally, `{{ HANDOVER_TEMPLATE }}` works in
+subagent `instructions`: it places the format inline without appending a duplicate.
+If that marker is absent, the format is appended to the system instructions as
+before. Inserted template content remains literal.
 
 Config files `agents/orchestrator.json` and `agents/worker.json` are optional
 personality overlays, not replacements for those contracts. Their optional

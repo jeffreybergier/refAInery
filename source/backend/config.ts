@@ -1,7 +1,7 @@
 import { readFile, lstat, realpath, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { orchestrator, orchestratorText } from "../agents/orchestrator.ts";
-import { subagent, subagentText } from "../agents/subagent.ts";
+import { subagent, subagentText, instructionsPrompt } from "../agents/subagent.ts";
 import { sharedText, systemPrompt, resolveAgentText, type PersonalityPrompts } from "../agents/shared.ts";
 import { createHash } from "node:crypto";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -53,7 +53,7 @@ export async function loadConfiguration(root: string) {
       agentText.subagent = resolveAgentText(agentTemplates.subagent, overlay?.prompts, base.id);
     }
     const instructions = base.role === "orchestrator" ? agentText.orchestrator.instructions
-      : [agentText.subagent.instructions, agentText.subagent.handover].join("\n\n");
+      : instructionsPrompt(agentText.subagent.instructions, agentText.subagent.handover);
     personalities.push({ schemaVersion: 1, id: base.id, role: base.role,
       name: overlay?.name ?? base.name, availableTools,
       instructions: systemPrompt(instructions),

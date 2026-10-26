@@ -10,7 +10,7 @@ import { loadProduction } from '../source/backend/workflow.ts';
 import { createAppServer } from '../source/server.ts';
 import { loadConfiguration } from '../source/backend/config.ts';
 import { firstPrompt as orchestratorFirstPrompt } from '../source/agents/orchestrator.ts';
-import { firstPrompt as subagentFirstPrompt } from '../source/agents/subagent.ts';
+import { firstPrompt as subagentFirstPrompt, instructionsPrompt } from '../source/agents/subagent.ts';
 
 const storage = process.env.REFAINERY_CHECK_STORAGE;
 assert.ok(storage, 'check.sh supplies disposable storage');
@@ -142,7 +142,8 @@ for (const [name, outcome, stopReason, beforeDispatch] of [
       assert.equal(content(seeds[0]), text.firstReply);
       assert.ok(messages.some(message => message.role === 'system' &&
         [content(message), ...Object.values(message.sections ?? {})].some(section =>
-          typeof section === 'string' && section.includes(text.instructions.trim()))));
+          typeof section === 'string' && section.includes((text === subagentText
+            ? instructionsPrompt(text.instructions, text.handover) : text.instructions).trim()))));
       const firstUser = messages.findIndex(message => message.role === 'user');
       const task = state.tasks[0];
       const expectedPrompt = text === orchestratorText

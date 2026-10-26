@@ -74,6 +74,14 @@ export const subagent = {
 
 // The validation contract and the agent's template share one source of truth.
 export const handoverSections = subagentText.handover.split("\n").filter(Boolean);
+
+/** Place the handover format inline, retaining the legacy append fallback. */
+export function instructionsPrompt(text: string, handover: string): string {
+  const marker = "{{ HANDOVER_TEMPLATE }}";
+  return text.includes(marker) ? text.split(marker).join(handover)
+    : [text, handover].join("\n\n");
+}
+
 export function firstPrompt(assignment: string,
   text = composePrompt(subagentText.firstPrompt),
   context: { request?: string; plan?: string; handoverTemplate?: string } = {}): string {

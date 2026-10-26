@@ -130,8 +130,12 @@ fallback, including for empty guidance. Subagent markers likewise expand in one
 pass: the delegated assignment, original user request, saved plan at dispatch,
 and snapshotted handover format. Missing request or plan context for a referenced
 marker is an error. Without an assignment marker, assignment JSON is appended.
-These data markers are supported only in `firstPrompt`; handover review data
-remains appended as JSON with its explicit untrusted-content boundary.
+These data markers are supported in `firstPrompt`. The subagent also supports
+`{{ HANDOVER_TEMPLATE }}` in `instructions`, substituting the snapshotted format
+inline in one pass instead of appending it again. Without that marker, the format
+is appended as before. The composed system instructions are frozen separately
+from the authored prompt slots. Handover review data remains appended as JSON
+with its explicit untrusted-content boundary.
 
 The first reply is a complete synthetic assistant message, not a partial-token
 prefill and not a user-role custom message. Pi persists it in JSONL and exports.
